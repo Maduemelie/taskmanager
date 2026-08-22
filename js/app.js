@@ -4,6 +4,7 @@ import db from './db.js';
 import { seedDatabase } from './seed.js';
 import { getPreferences } from './models/preferences.js';
 import { getPlanForDate, processEndOfDay, isStale } from './models/plan.js';
+import { runPipelineTests } from './engine/test-pipeline.js';
 
 // Global App State
 window.PlanFlow = {
@@ -113,6 +114,9 @@ async function init() {
   
   // Setup minor interactive elements for testing
   setupInteractivity();
+
+  // Run planning engine pipeline tests in console (Phase 3 validation)
+  runPipelineTests();
 
   // Register PWA Service Worker
   registerServiceWorker();
