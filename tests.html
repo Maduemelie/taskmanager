@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PlanFlow Tests — Browser Test Runner</title>
+  <link rel="stylesheet" href="css/variables.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <style>
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      padding: var(--spacing-xl) var(--spacing-md);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .test-container {
+      width: 100%;
+      max-width: 600px;
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-lg);
+    }
+    .test-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .test-header h1 {
+      font-size: 1.5rem;
+      font-weight: 900;
+    }
+    #test-report {
+      background-color: var(--surface-color);
+      border-radius: var(--radius-lg);
+      padding: var(--spacing-xl);
+      box-shadow: var(--shadow-md);
+      border: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-md);
+    }
+  </style>
+</head>
+<body>
+  <div class="test-container">
+    <header class="test-header">
+      <h1>PlanFlow Test Suite 🧪</h1>
+      <a href="index.html" class="btn btn-ghost" style="font-size:0.85rem; border: 1px solid var(--border-color); padding: 6px 12px;">
+        Back to App
+      </a>
+    </header>
+
+    <div id="test-report">
+      <div style="text-align: center; padding: var(--spacing-xl); color: var(--text-muted);">
+        Initializing test files and Dexie database...
+      </div>
+    </div>
+  </div>
+
+  <!-- Test suite loader script -->
+  <script type="module">
+    import { runAllTests } from './js/tests/runner.js';
+    
+    // Import all test suites to register them in runner
+    import './js/tests/recurrence.test.js';
+    import './js/tests/scoring.test.js';
+    import './js/tests/planner.test.js';
+    import './js/tests/reschedule.test.js';
+    import './js/tests/models.test.js';
+
+    // Execute runner
+    document.addEventListener('DOMContentLoaded', () => {
+      // Small timeout to allow DB initialization to complete comfortably
+      setTimeout(async () => {
+        await runAllTests();
+      }, 100);
+    });
+  </script>
+</body>
+</html>
