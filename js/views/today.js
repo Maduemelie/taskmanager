@@ -7,6 +7,8 @@ import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { addUnplannedTask, rescheduleRemaining, suggestDeferrals, applyDeferrals } from '../engine/reschedule.js';
 import { today, formatTime } from '../utils/date.js';
+import { stagger, slideUp, popEffect } from '../utils/animate.js';
+import { triggerHaptic } from '../utils/haptics.js';
 
 let activePlan = null;
 let timeIndicatorInterval = null;
@@ -97,6 +99,7 @@ export async function renderTodayView() {
 
       const callbacks = {
         onStart: async (taskId) => {
+          triggerHaptic(10);
           await markTaskStatus(activePlan.id, taskId, 'in-progress');
           showToast('Task started! Focus time ⚡', 'info');
           renderTodayView();
@@ -106,6 +109,7 @@ export async function renderTodayView() {
           showCompletionMinutesModal(taskId, slot.estimatedMinutes);
         },
         onSkip: async (taskId) => {
+          triggerHaptic(10);
           await markTaskStatus(activePlan.id, taskId, 'skipped');
           showToast('Task deferred back to bucket ⏭️', 'info');
           renderTodayView();
@@ -119,18 +123,38 @@ export async function renderTodayView() {
       container.appendChild(slotElement);
     });
 
+    // Stagger animate timeline slots
+    const slots = container.querySelectorAll('.timeline-slot');
+    stagger(slots, (el, delay) => slideUp(el, 15, 300, delay));
+
     // Positions indicator line initially
     setTimeout(updateTimeIndicatorPosition, 50);
   }
-
-  // Update progress bar
   const totalTasks = activeSlots.length;
   const completedTasks = activeSlots.filter(t => t.status === 'completed').length;
   const percentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
   if (progressText) progressText.textContent = `${percentage}%`;
-  if (progressFill) progressFill.style.width = `${percentage}%`;
-  if (progressCount) progressCount.textContent = `${completedTasks}/${totalTasks} done`;
+  
+  const ringFill = document.getElementById('today-progress-ring-fill');
+  if (ringFill) {
+    const offset = 113 - (113 * percentage) / 100;
+    ringFill.style.strokeDashoffset = offset;
+    
+    // Color shift based on completion percentage
+    if (percentage >= 100) {
+      ringFill.style.stroke = 'var(--secondary-color)';
+      if (progressText) progressText.style.color = 'var(--secondary-color)';
+    } else if (percentage >= 50) {
+      ringFill.style.stroke = 'var(--accent-color)';
+      if (progressText) progressText.style.color = 'var(--accent-color)';
+    } else {
+      ringFill.style.stroke = 'var(--primary-color)';
+      if (progressText) progressText.style.color = 'var(--primary-color)';
+    }
+  }
+
+  if (progressCount) progressCount.textContent = `${completedTasks}/${totalTasks} tasks done`;
 
   // Trigger fullscreen confetti if all done!
   if (totalTasks > 0 && completedTasks === totalTasks) {
@@ -191,8 +215,20 @@ function showCompletionMinutesModal(taskId, estimatedMinutes) {
     const minInput = document.getElementById('comp-minutes');
     const actualMinutes = parseInt(minInput.value, 10) || estimatedMinutes;
 
-    await markTaskStatus(activePlan.id, taskId, 'completed', actualMinutes);
+    // Trigger vibration and pop spring effect before re-render
+    triggerHaptic(15);
+    const slot = document.querySelector(`.timeline-slot[data-task-id="${taskId}"]`);
+    if (slot) {
+      const card = slot.querySelector('.card');
+      if (card) popEffect(card);
+    }
+
     closeModal();
+    
+    // Wait for pop effect animation to finish
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    await markTaskStatus(activePlan.id, taskId, 'completed', actualMinutes);
     showToast('Task completed! Streak updated 🎉', 'success');
     renderTodayView();
   });

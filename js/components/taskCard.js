@@ -1,4 +1,5 @@
 /* js/components/taskCard.js */
+import { triggerHaptic } from '../utils/haptics.js';
 
 /**
  * Creates and renders a task card DOM element.
@@ -84,8 +85,13 @@ export function renderTaskCard(task, mode, callbacks = {}) {
   
   // Title / Name
   const title = document.createElement('h4');
+  title.className = 'task-card-title';
   title.style.margin = '0 0 var(--spacing-xs) 0';
   title.style.fontSize = '1.05rem';
+  title.style.whiteSpace = 'nowrap';
+  title.style.overflow = 'hidden';
+  title.style.textOverflow = 'ellipsis';
+  title.style.maxWidth = '180px';
   title.textContent = task.name;
   cardContent.appendChild(title);
 
@@ -192,12 +198,14 @@ export function renderTaskCard(task, mode, callbacks = {}) {
       // Determine if swipe thresholds met
       if (diffX > 120) {
         // Confirm Complete
+        triggerHaptic(20);
         card.style.transform = 'translateX(100%)';
         setTimeout(() => {
           if (callbacks.onComplete) callbacks.onComplete(task.id);
         }, 150);
       } else if (diffX < -120) {
         // Confirm Skip
+        triggerHaptic(20);
         card.style.transform = 'translateX(-100%)';
         setTimeout(() => {
           if (callbacks.onSkip) callbacks.onSkip(task.id);

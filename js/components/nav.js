@@ -1,4 +1,5 @@
 /* js/components/nav.js */
+import { triggerHaptic } from '../utils/haptics.js';
 
 /**
  * Initializes and wires bottom navigation tab click events.
@@ -9,8 +10,9 @@ export function initNavigation() {
   
   navItems.forEach(item => {
     item.addEventListener('click', (e) => {
-      // Allow default hash routing
-      // Optional: Add active click feedback classes/animations
+      // Trigger haptic vibration on navigation
+      triggerHaptic(10);
+      
       item.classList.add('nav-clicked');
       setTimeout(() => {
         item.classList.remove('nav-clicked');

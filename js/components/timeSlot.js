@@ -18,6 +18,7 @@ import { renderTaskCard } from './taskCard.js';
 export function renderTimeSlot(slotEntry, task, callbacks = {}) {
   const slot = document.createElement('div');
   slot.className = `timeline-slot ${slotEntry.status}`;
+  slot.dataset.taskId = slotEntry.taskId;
   slot.style.position = 'relative';
 
   // Calculate End Time

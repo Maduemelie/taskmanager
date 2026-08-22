@@ -2,6 +2,7 @@
 import { getActiveTasks } from '../models/task.js';
 import { getPreferences } from '../models/preferences.js';
 import { renderTaskCard } from '../components/taskCard.js';
+import { stagger, slideUp } from '../utils/animate.js';
 
 let currentFilter = 'all';
 let searchQuery = '';
@@ -135,6 +136,10 @@ export async function renderBucketView() {
     globalEmpty.innerHTML = `<h3>No tasks found</h3><p style="margin-top:8px;font-size:0.85rem;">Try adjusting your filters or add a new task.</p>`;
     listContainer.appendChild(globalEmpty);
   }
+
+  // Stagger animate task cards
+  const cards = listContainer.querySelectorAll('.task-card-container');
+  stagger(cards, (el, delay) => slideUp(el, 15, 300, delay));
 }
 
 function renderFilterChips(buckets, container) {

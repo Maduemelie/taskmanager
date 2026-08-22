@@ -75,6 +75,18 @@
   box-shadow: none !important;
 }
 
+.btn:active {
+  transform: scale(0.96) !important;
+}
+
+.card:active {
+  transform: scale(0.98);
+}
+
+.chip:active {
+  transform: scale(0.94);
+}
+
 /* --- Chips / Tags / Badges --- */
 .chip {
   display: inline-flex;

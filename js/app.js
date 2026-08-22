@@ -13,6 +13,10 @@ import { initBucketView, renderBucketView } from './views/bucket.js';
 import { initAddTaskView, renderAddTaskView } from './views/addTask.js';
 import { initSettingsView, renderSettingsView } from './views/settings.js';
 import { initNavigation } from './components/nav.js';
+import { initInstallPrompt } from './components/installPrompt.js';
+import { checkOnboarding } from './components/onboarding.js';
+
+const bootDate = today();
 
 // Global App State
 window.PlanFlow = {
@@ -129,6 +133,8 @@ async function init() {
 
   // Initialize navigation & view managers
   initNavigation();
+  initInstallPrompt();
+  checkOnboarding();
   initTodayView();
   initPlanDayView();
   initBucketView();
@@ -141,10 +147,27 @@ async function init() {
   // Initialize route on first load
   handleRoute();
 
+  // Offline network status badge toggler
+  const updateOnlineStatus = () => {
+    const badge = document.getElementById('offline-badge');
+    if (badge) {
+      badge.classList.toggle('hidden', navigator.onLine);
+    }
+  };
+  window.addEventListener('online', updateOnlineStatus);
+  window.addEventListener('offline', updateOnlineStatus);
+  updateOnlineStatus();
+
   // Visibility change listener to auto-refresh view if user switches back to the tab
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       console.log('[App] App resumed from background. Re-rendering view.');
+      // Midnight rollover check: force full page reload to process rollover
+      if (today() !== bootDate) {
+        console.log('[App] System date changed. Reloading app...');
+        window.location.reload();
+        return;
+      }
       handleRoute();
     }
   });

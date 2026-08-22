@@ -96,3 +96,22 @@ button {
   padding: var(--spacing-lg);
   padding-bottom: calc(var(--spacing-xxxl) + var(--spacing-xl)); /* Space for bottom navigation */
 }
+
+/* Offline Badge styles */
+.offline-badge {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  background-color: var(--accent-color);
+  color: white;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 0.7rem;
+  font-weight: 800;
+  z-index: 10001;
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+}
+.offline-badge.hidden {
+  display: none !important;
+}

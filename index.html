@@ -22,6 +22,7 @@
   <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
 </head>
 <body>
+  <div id="offline-badge" class="offline-badge hidden">⚠️ Offline Mode</div>
   <div class="app-container">
     <!-- Main Scrollable Content -->
     <main class="main-content" id="main-content">
@@ -39,17 +40,19 @@
         </header>
         
         <!-- Progress Summary -->
-        <div class="today-progress-container">
-          <div class="progress-info">
-            <p style="font-weight: 700; font-size: 0.95rem; margin-bottom: 4px;">
-              Progress: <span id="today-progress-text" class="progress-percentage">0%</span>
-            </p>
-            <div class="progress-bar-container">
-              <div id="today-progress-fill" class="progress-bar-fill"></div>
-            </div>
+        <div class="today-progress-container" style="display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-md);">
+          <!-- Circular SVG Progress Ring -->
+          <div style="position: relative; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;">
+            <svg class="progress-ring" width="44" height="44" style="transform: rotate(-90deg);">
+              <circle class="progress-ring-bg" stroke="var(--border-light)" stroke-width="4" fill="transparent" r="18" cx="22" cy="22"/>
+              <circle id="today-progress-ring-fill" stroke="var(--secondary-color)" stroke-width="4" fill="transparent" r="18" cx="22" cy="22" stroke-dasharray="113" stroke-dashoffset="113" style="transition: stroke-dashoffset var(--transition-normal);"/>
+            </svg>
+            <span id="today-progress-text" style="position: absolute; font-size: 0.75rem; font-weight: 800; color: var(--secondary-color);">0%</span>
           </div>
-          <div id="today-progress-count" style="font-size: 0.85rem; font-weight: 800; color: var(--text-muted);">
-            0/0 done
+          
+          <div class="progress-info" style="flex: 1;">
+            <p style="font-weight: 700; font-size: 0.95rem; margin-bottom: 2px;">Daily Flow Completion</p>
+            <div id="today-progress-count" style="font-size: 0.85rem; font-weight: 800; color: var(--text-muted);">0/0 tasks done</div>
           </div>
         </div>
 

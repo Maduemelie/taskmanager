@@ -6,6 +6,7 @@ import { getPreferences } from '../models/preferences.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { today } from '../utils/date.js';
+import { stagger, slideUp } from '../utils/animate.js';
 
 let activeEnergy = 'medium';
 let generatedSuggestions = []; // Array of { task, isChecked }
@@ -284,6 +285,10 @@ function renderSuggestionsList() {
   if (capacitySummary) {
     capacitySummary.textContent = `${totalScheduledMin}m / ${initialCapacity}m`;
   }
+
+  // Stagger animate suggested cards
+  const cards = container.querySelectorAll('.suggestion-card');
+  stagger(cards, (el, delay) => slideUp(el, 15, 300, delay));
 }
 
 /**

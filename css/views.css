@@ -290,6 +290,19 @@ section.view.active {
   font-size: 1.2rem;
   padding: var(--spacing-lg) var(--spacing-xxl);
   border-radius: var(--radius-full);
+  animation: pulseButton 2s infinite;
+}
+
+@keyframes pulseButton {
+  0% {
+    box-shadow: 0 0 0 0 rgba(232, 112, 58, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 12px rgba(232, 112, 58, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(232, 112, 58, 0);
+  }
 }
 
 .plan-setup-container {
