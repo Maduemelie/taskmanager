@@ -1,0 +1,15 @@
+# Windows system files
+[Dd]esktop.ini
+Thumbs.db
+
+# macOS system files
+.DS_Store
+
+# IDE / Editor configuration
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

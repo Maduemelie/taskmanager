@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#FBF8F4">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="PlanFlow">
+  
+  <title>PlanFlow — Adaptive Planner</title>
+  
+  <!-- CSS Imports -->
+  <link rel="stylesheet" href="css/variables.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/views.css">
+  
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Main Scrollable Content -->
+    <main class="main-content" id="main-content">
+      
+      <!-- 1. Today Timeline View -->
+      <section id="today-view" class="view active">
+        <header class="today-header">
+          <div>
+            <h1 id="today-view-title">Today</h1>
+            <p id="today-view-subtitle" style="font-size: 0.9rem; color: var(--text-muted);"></p>
+          </div>
+          <button id="today-replan-btn" class="btn btn-ghost" style="padding: var(--spacing-sm);">
+            🔄 Replan
+          </button>
+        </header>
+        
+        <!-- Progress Summary -->
+        <div class="today-progress-container">
+          <div class="progress-info">
+            <p style="font-weight: 700; font-size: 0.95rem; margin-bottom: 4px;">
+              Progress: <span id="today-progress-text" class="progress-percentage">0%</span>
+            </p>
+            <div class="progress-bar-container">
+              <div id="today-progress-fill" class="progress-bar-fill"></div>
+            </div>
+          </div>
+          <div id="today-progress-count" style="font-size: 0.85rem; font-weight: 800; color: var(--text-muted);">
+            0/0 done
+          </div>
+        </div>
+
+        <!-- Schedule Timeline -->
+        <div id="timeline-container" class="timeline">
+          <!-- Timeline slots dynamically generated here -->
+          <div id="timeline-empty-state" class="bucket-empty-state" style="border-style: solid; padding: var(--spacing-xxl);">
+            <h3>Your day is clear!</h3>
+            <p style="margin-top: 8px; margin-bottom: var(--spacing-md);">No tasks scheduled for today.</p>
+            <button id="timeline-plan-now-btn" class="btn btn-primary">Plan My Day ✨</button>
+          </div>
+        </div>
+
+        <!-- "Something Came Up" FAB -->
+        <button id="interruption-fab" class="fab" aria-label="Something came up">
+          🌊
+        </button>
+      </section>
+
+      <!-- 2. Plan My Day View -->
+      <section id="plan-view" class="view">
+        <header style="margin-bottom: var(--spacing-lg);">
+          <h1>Plan My Day</h1>
+          <p style="font-size: 0.9rem; color: var(--text-muted);">Generate a focused schedule based on your available time and priorities.</p>
+        </header>
+
+        <!-- Planning Setup Screen (Pre-Plan State) -->
+        <div id="plan-pre-setup" class="plan-hero">
+          <div class="plan-hero-icon">✨</div>
+          <h2>Ready to focus?</h2>
+          <p style="color: var(--text-muted); max-width: 280px; margin-bottom: var(--spacing-lg);">
+            Let's design a customized schedule for today.
+          </p>
+          <button id="plan-start-setup-btn" class="btn btn-primary plan-btn-start">
+            Start Planning
+          </button>
+        </div>
+
+        <!-- Setup Questions (Visible during flow) -->
+        <div id="plan-setup" class="plan-setup-container hidden">
+          <!-- Capacity slider -->
+          <div class="form-group">
+            <label class="form-label" for="plan-capacity">How much focus time do you have today?</label>
+            <div style="display: flex; align-items: center; gap: var(--spacing-md);">
+              <input type="range" id="plan-capacity" class="range" min="30" max="480" step="30" value="180">
+              <span id="plan-capacity-display" style="font-weight: 800; min-width: 70px; text-align: right;">3h 0m</span>
+            </div>
+            <!-- Presets -->
+            <div style="display: flex; gap: var(--spacing-sm); margin-top: var(--spacing-xs);">
+              <button class="btn btn-secondary capacity-preset" data-val="60" style="padding: 4px 10px; font-size: 0.8rem;">1h</button>
+              <button class="btn btn-secondary capacity-preset" data-val="180" style="padding: 4px 10px; font-size: 0.8rem;">3h</button>
+              <button class="btn btn-secondary capacity-preset" data-val="300" style="padding: 4px 10px; font-size: 0.8rem;">5h</button>
+            </div>
+          </div>
+
+          <!-- Energy selector -->
+          <div class="form-group">
+            <label class="form-label">How is your energy level right now?</label>
+            <div class="energy-selector">
+              <div class="energy-option" data-energy="low">
+                <span>🔋</span>
+                <span>Low</span>
+              </div>
+              <div class="energy-option selected" data-energy="medium">
+                <span>⚡</span>
+                <span>Medium</span>
+              </div>
+              <div class="energy-option" data-energy="high">
+                <span>🚀</span>
+                <span>High</span>
+              </div>
+            </div>
+          </div>
+
+          <button id="plan-generate-btn" class="btn btn-primary" style="width: 100%; margin-top: var(--spacing-md);">
+            Generate Suggestions
+          </button>
+        </div>
+
+        <!-- Plan Suggestions Screen (Confirm State) -->
+        <div id="plan-suggestions" class="hidden">
+          <div class="plan-suggestions-header">
+            <h3>Suggested Today</h3>
+            <span id="suggestions-capacity-summary" style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted);">
+              0m / 0m
+            </span>
+          </div>
+
+          <div id="suggestions-list-container" class="plan-suggestions-list">
+            <!-- Dynamic suggestion rows -->
+          </div>
+
+          <div style="display: flex; gap: var(--spacing-md); margin-top: var(--spacing-lg);">
+            <button id="plan-add-more-btn" class="btn btn-secondary" style="flex: 1;">
+              + Add More
+            </button>
+            <button id="plan-confirm-btn" class="btn btn-primary" style="flex: 1;">
+              Let's Do It!
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. Task Bucket View -->
+      <section id="bucket-view" class="view">
+        <header style="margin-bottom: var(--spacing-lg);">
+          <h1>Task Bucket</h1>
+          <p style="font-size: 0.9rem; color: var(--text-muted);">All your possibilities, ready to be scheduled.</p>
+        </header>
+
+        <!-- Search / Filters -->
+        <div class="form-group" style="margin-bottom: var(--spacing-md);">
+          <input type="text" id="bucket-search" class="input" placeholder="Search tasks..." style="padding: var(--spacing-md);">
+        </div>
+        
+        <div id="bucket-filter-chips" style="display: flex; gap: var(--spacing-sm); overflow-x: auto; padding-bottom: 8px; margin-bottom: var(--spacing-lg); scrollbar-width: none;">
+          <!-- Filter chips dynamically populated -->
+        </div>
+
+        <!-- Collapsible Bucket Sections -->
+        <div id="bucket-list" class="bucket-grid">
+          <!-- Dynamic buckets generated here -->
+        </div>
+
+        <!-- Add Task FAB -->
+        <button id="bucket-add-task-btn" class="fab" aria-label="Add task to bucket">
+          +
+        </button>
+      </section>
+
+      <!-- 4. Add/Edit Task Form Screen -->
+      <section id="add-task-view" class="view">
+        <header class="task-form-header">
+          <h1 id="task-form-title">Create Task</h1>
+          <p id="task-form-subtitle" style="font-size: 0.9rem; color: var(--text-muted);">Define the task's properties for smart planning.</p>
+        </header>
+
+        <form id="task-form" onsubmit="event.preventDefault();">
+          <input type="hidden" id="edit-task-id">
+
+          <!-- Name -->
+          <div class="form-group">
+            <label class="form-label" for="task-name">Task Name</label>
+            <input type="text" id="task-name" class="input" placeholder="e.g., Study Machine Learning" required>
+          </div>
+
+          <!-- Bucket / Category -->
+          <div class="form-group">
+            <label class="form-label" for="task-bucket">Bucket</label>
+            <select id="task-bucket" class="select" required>
+              <!-- Populated dynamically from preferences -->
+            </select>
+          </div>
+
+          <!-- Priority -->
+          <div class="form-group">
+            <label class="form-label" for="task-priority">Priority (1 = low, 5 = urgent)</label>
+            <div style="display: flex; align-items: center; gap: var(--spacing-md);">
+              <input type="range" id="task-priority" class="range" min="1" max="5" value="3">
+              <span id="task-priority-display" style="font-weight: 800; min-width: 20px;">3</span>
+            </div>
+          </div>
+
+          <!-- Estimated Duration -->
+          <div class="form-group">
+            <label class="form-label" for="task-duration">Estimated Duration (minutes)</label>
+            <div style="display: flex; align-items: center; gap: var(--spacing-md); margin-bottom: var(--spacing-xs);">
+              <input type="number" id="task-duration" class="input" min="5" max="480" value="30" required>
+            </div>
+            <div class="duration-presets">
+              <button type="button" class="duration-chip" data-min="15">15m</button>
+              <button type="button" class="duration-chip selected" data-min="30">30m</button>
+              <button type="button" class="duration-chip" data-min="45">45m</button>
+              <button type="button" class="duration-chip" data-min="60">60m</button>
+              <button type="button" class="duration-chip" data-min="90">90m</button>
+            </div>
+          </div>
+
+          <!-- Energy Required -->
+          <div class="form-group">
+            <label class="form-label">Energy Level Required</label>
+            <div class="energy-selector" id="task-energy-selector">
+              <div class="energy-option" data-energy="low">
+                <span>🔋 Low</span>
+              </div>
+              <div class="energy-option selected" data-energy="medium">
+                <span>⚡ Med</span>
+              </div>
+              <div class="energy-option" data-energy="high">
+                <span>🚀 High</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Preferred Time -->
+          <div class="form-group">
+            <label class="form-label" for="task-preferred-time">Preferred Time of Day</label>
+            <select id="task-preferred-time" class="select">
+              <option value="anytime" selected>Anytime</option>
+              <option value="morning">Morning</option>
+              <option value="afternoon">Afternoon</option>
+              <option value="evening">Evening</option>
+            </select>
+          </div>
+
+          <!-- Recurrence Toggle & Options -->
+          <div class="form-group" style="margin-bottom: var(--spacing-md);">
+            <div class="toggle-container">
+              <span class="form-label">Is this a recurring task?</span>
+              <label style="display: inline-block;">
+                <input type="checkbox" id="task-recurring-toggle" class="hidden">
+                <div class="toggle-switch"></div>
+              </label>
+            </div>
+          </div>
+
+          <div id="recurrence-options" class="hidden" style="background-color: var(--border-light); padding: var(--spacing-md); border-radius: var(--radius-md); margin-bottom: var(--spacing-lg);">
+            <div class="form-group">
+              <label class="form-label" for="recurrence-type">Recurrence Pattern</label>
+              <select id="recurrence-type" class="select">
+                <option value="daily">Every day</option>
+                <option value="weekly" selected>Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="custom">Custom interval</option>
+              </select>
+            </div>
+
+            <!-- Custom interval details -->
+            <div id="recurrence-interval-group" class="form-group hidden">
+              <label class="form-label" for="recurrence-interval">Repeat every</label>
+              <div style="display: flex; align-items: center; gap: var(--spacing-sm);">
+                <input type="number" id="recurrence-interval" class="input" min="1" value="1" style="width: 80px;">
+                <span id="recurrence-interval-unit">days</span>
+              </div>
+            </div>
+
+            <!-- Weekly days selection -->
+            <div id="recurrence-weekly-days" class="form-group">
+              <label class="form-label">Select days of the week</label>
+              <div style="display: flex; gap: var(--spacing-xs); flex-wrap: wrap;">
+                <label class="chip" style="cursor: pointer;"><input type="checkbox" name="weekly-day" value="1" style="margin-right: 4px;">Mon</label>
+                <label class="chip" style="cursor: pointer;"><input type="checkbox" name="weekly-day" value="2" style="margin-right: 4px;">Tue</label>
+                <label class="chip" style="cursor: pointer;"><input type="checkbox" name="weekly-day" value="3" style="margin-right: 4px;">Wed</label>
+                <label class="chip" style="cursor: pointer;"><input type="checkbox" name="weekly-day" value="4" style="margin-right: 4px;">Thu</label>
+                <label class="chip" style="cursor: pointer;"><input type="checkbox" name="weekly-day" value="5" style="margin-right: 4px;">Fri</label>
+                <label class="chip" style="cursor: pointer;"><input type="checkbox" name="weekly-day" value="6" style="margin-right: 4px;">Sat</label>
+                <label class="chip" style="cursor: pointer;"><input type="checkbox" name="weekly-day" value="0" style="margin-right: 4px;">Sun</label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Deadline -->
+          <div class="form-group">
+            <div class="toggle-container">
+              <span class="form-label">Add a deadline?</span>
+              <label style="display: inline-block;">
+                <input type="checkbox" id="task-deadline-toggle" class="hidden">
+                <div class="toggle-switch"></div>
+              </label>
+            </div>
+            <input type="date" id="task-deadline" class="input hidden" style="margin-top: var(--spacing-sm);">
+          </div>
+
+          <!-- Active Until (Expiration) -->
+          <div class="form-group">
+            <div class="toggle-container">
+              <span class="form-label">Active until a specific date?</span>
+              <label style="display: inline-block;">
+                <input type="checkbox" id="task-expiry-toggle" class="hidden">
+                <div class="toggle-switch"></div>
+              </label>
+            </div>
+            <input type="date" id="task-expiry" class="input hidden" style="margin-top: var(--spacing-sm);">
+          </div>
+
+          <!-- Actions -->
+          <div style="display: flex; gap: var(--spacing-md); margin-top: var(--spacing-xxl);">
+            <button type="button" id="task-cancel-btn" class="btn btn-secondary" style="flex: 1;">Cancel</button>
+            <button type="button" id="task-delete-btn" class="btn btn-ghost hidden" style="color: var(--color-danger);">Delete</button>
+            <button type="submit" id="task-save-btn" class="btn btn-primary" style="flex: 1;">Save Task</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- 5. Settings Screen -->
+      <section id="settings-view" class="view">
+        <header style="margin-bottom: var(--spacing-lg);">
+          <h1>Settings</h1>
+          <p style="font-size: 0.9rem; color: var(--text-muted);">Customize your adaptive planner parameters.</p>
+        </header>
+
+        <!-- Preference Section: Daily Schedule -->
+        <div class="settings-section">
+          <h3 class="settings-section-title">Schedule Settings</h3>
+          <div class="form-group">
+            <label class="form-label" for="settings-wake-time">Typical Wake Time</label>
+            <input type="time" id="settings-wake-time" class="input" value="07:00">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="settings-sleep-time">Typical Sleep Time</label>
+            <input type="time" id="settings-sleep-time" class="input" value="23:00">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="settings-default-capacity">Default Daily Capacity</label>
+            <div style="display: flex; align-items: center; gap: var(--spacing-md);">
+              <input type="range" id="settings-default-capacity" class="range" min="30" max="480" step="30" value="300">
+              <span id="settings-capacity-display" style="font-weight: 800; min-width: 60px; text-align: right;">5h 0m</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Preference Section: Buckets Management -->
+        <div class="settings-section">
+          <h3 class="settings-section-title">My Buckets</h3>
+          <div id="settings-buckets-list" style="display: flex; flex-direction: column; gap: var(--spacing-sm);">
+            <!-- Buckets list with delete/edit options populated dynamically -->
+          </div>
+          <button id="settings-add-bucket-btn" class="btn btn-secondary" style="margin-top: var(--spacing-sm); width: 100%;">
+            + Add Custom Bucket
+          </button>
+        </div>
+
+        <!-- Preference Section: Data Backup / Control -->
+        <div class="settings-section">
+          <h3 class="settings-section-title">Data Controls</h3>
+          <button id="settings-export-btn" class="btn btn-secondary" style="width: 100%;">
+            📤 Export Data (JSON)
+          </button>
+          <button id="settings-import-btn" class="btn btn-secondary" style="width: 100%;">
+            📥 Import Data (JSON)
+          </button>
+          <input type="file" id="settings-import-file" class="hidden" accept=".json">
+          <button id="settings-reset-demo-btn" class="btn btn-ghost" style="color: var(--color-danger); width: 100%; border: 1px solid var(--color-danger); border-radius: var(--radius-md);">
+            🔄 Reset Demo Data
+          </button>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Navigation Bar -->
+    <nav class="bottom-nav">
+      <a href="#today" class="nav-item active" id="nav-today">
+        <span class="nav-icon">📅</span>
+        <span>Today</span>
+      </a>
+      <a href="#plan" class="nav-item" id="nav-plan">
+        <span class="nav-icon">✨</span>
+        <span>Plan</span>
+      </a>
+      <a href="#bucket" class="nav-item" id="nav-bucket">
+        <span class="nav-icon">📋</span>
+        <span>Bucket</span>
+      </a>
+      <a href="#settings" class="nav-item" id="nav-settings">
+        <span class="nav-icon">⚙️</span>
+        <span>Settings</span>
+      </a>
+    </nav>
+  </div>
+
+  <!-- Bottom Sheet Modal Structure -->
+  <div id="modal-overlay" class="modal-overlay"></div>
+  <div id="bottom-sheet" class="bottom-sheet">
+    <div class="bottom-sheet-handle"></div>
+    <div class="bottom-sheet-header">
+      <h3 id="bottom-sheet-title">Modal Header</h3>
+      <button id="bottom-sheet-close" class="btn btn-ghost" style="padding: var(--spacing-xs);">✖</button>
+    </div>
+    <div id="bottom-sheet-content">
+      <!-- Modal Content gets injected here -->
+    </div>
+  </div>
+
+  <!-- Toast Notification Stack -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- JS Modules -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
