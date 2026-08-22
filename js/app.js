@@ -6,6 +6,14 @@ import { getPreferences } from './models/preferences.js';
 import { getPlanForDate, processEndOfDay, isStale } from './models/plan.js';
 import { runPipelineTests } from './engine/test-pipeline.js';
 
+// Import views
+import { initTodayView, renderTodayView } from './views/today.js';
+import { initPlanDayView, renderPlanDayView } from './views/planDay.js';
+import { initBucketView, renderBucketView } from './views/bucket.js';
+import { initAddTaskView, renderAddTaskView } from './views/addTask.js';
+import { initSettingsView, renderSettingsView } from './views/settings.js';
+import { initNavigation } from './components/nav.js';
+
 // Global App State
 window.PlanFlow = {
   version: '1.0.0',
@@ -33,11 +41,21 @@ const navMapping = {
   'settings-view': 'nav-settings'
 };
 
+// Map of view renderers
+const viewRenderers = {
+  'today-view': renderTodayView,
+  'plan-view': renderPlanDayView,
+  'bucket-view': renderBucketView,
+  'settings-view': renderSettingsView,
+  'add-task-view': renderAddTaskView
+};
+
 /**
  * Hash router function
  */
 function handleRoute() {
-  const hash = window.location.hash;
+  // Strip query parameters for routing logic
+  const hash = window.location.hash.split('?')[0];
   const activeSectionId = routes[hash] || 'today-view';
   
   // Update state
@@ -66,10 +84,13 @@ function handleRoute() {
     }
   }
 
-  // Debug log
-  console.log(`[Router] Navigated to view: ${window.PlanFlow.state.currentView} (${activeSectionId})`);
+  // Render view-specific content
+  const renderFn = viewRenderers[activeSectionId];
+  if (renderFn) {
+    renderFn();
+  }
 
-  // Extra Phase 1 polish: Render readable date in Today subtitle
+  // Polish: Render readable date in Today subtitle
   if (activeSectionId === 'today-view') {
     const dateSubtitle = document.getElementById('today-view-subtitle');
     if (dateSubtitle) {
@@ -106,65 +127,33 @@ async function init() {
     console.error('[App] Database initialization failed:', err);
   }
 
+  // Initialize navigation & view managers
+  initNavigation();
+  initTodayView();
+  initPlanDayView();
+  initBucketView();
+  initAddTaskView();
+  initSettingsView();
+
   // Listen for hash changes
   window.addEventListener('hashchange', handleRoute);
   
   // Initialize route on first load
   handleRoute();
-  
-  // Setup minor interactive elements for testing
-  setupInteractivity();
+
+  // Visibility change listener to auto-refresh view if user switches back to the tab
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      console.log('[App] App resumed from background. Re-rendering view.');
+      handleRoute();
+    }
+  });
 
   // Run planning engine pipeline tests in console (Phase 3 validation)
   runPipelineTests();
 
   // Register PWA Service Worker
   registerServiceWorker();
-}
-
-/**
- * Setup basic button actions for Phase 1 testing
- */
-function setupInteractivity() {
-  // Plan Now button routing
-  const planNowBtn = document.getElementById('timeline-plan-now-btn');
-  if (planNowBtn) {
-    planNowBtn.addEventListener('click', () => {
-      window.location.hash = '#plan';
-    });
-  }
-
-  // Today view Replan button routing
-  const replanBtn = document.getElementById('today-replan-btn');
-  if (replanBtn) {
-    replanBtn.addEventListener('click', () => {
-      window.location.hash = '#plan';
-    });
-  }
-
-  // Interruption FAB click logs
-  const interruptionFab = document.getElementById('interruption-fab');
-  if (interruptionFab) {
-    interruptionFab.addEventListener('click', () => {
-      showToastMessage('Something Came Up clicked 🌊', 'info');
-    });
-  }
-
-  // Bucket Add Task FAB routing
-  const bucketAddTaskBtn = document.getElementById('bucket-add-task-btn');
-  if (bucketAddTaskBtn) {
-    bucketAddTaskBtn.addEventListener('click', () => {
-      window.location.hash = '#add-task';
-    });
-  }
-
-  // Add Task Cancel button routing back to bucket
-  const taskCancelBtn = document.getElementById('task-cancel-btn');
-  if (taskCancelBtn) {
-    taskCancelBtn.addEventListener('click', () => {
-      window.location.hash = '#bucket';
-    });
-  }
 }
 
 /**
@@ -184,32 +173,5 @@ function registerServiceWorker() {
   }
 }
 
-/**
- * Helper to show toast messages (temporary mockup for Phase 1)
- */
-function showToastMessage(message, type = 'info') {
-  const container = document.getElementById('toast-container');
-  if (!container) return;
-
-  const toast = document.createElement('div');
-  toast.className = `toast toast-${type}`;
-  toast.innerHTML = `<span>${message}</span>`;
-  container.appendChild(toast);
-
-  // Trigger CSS transition
-  setTimeout(() => {
-    toast.classList.add('active');
-  }, 10);
-
-  // Remove toast
-  setTimeout(() => {
-    toast.classList.remove('active');
-    setTimeout(() => {
-      toast.remove();
-    }, 300);
-  }, 3000);
-}
-
 // Run init on load
 document.addEventListener('DOMContentLoaded', init);
-export { showToastMessage };
