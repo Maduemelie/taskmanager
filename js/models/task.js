@@ -76,7 +76,7 @@ export async function getAllTasks() {
  * @returns {Promise<Array>}
  */
 export async function getActiveTasks() {
-  return await db.tasks.where({ isActive: 1, isArchived: 0 }).toArray();
+  return await db.tasks.filter(task => task.isActive && !task.isArchived).toArray();
 }
 
 /**

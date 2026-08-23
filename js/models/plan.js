@@ -18,7 +18,7 @@ export async function getTodayPlan() {
  * @returns {Promise<Object|undefined>}
  */
 export async function getPlanForDate(dateStr) {
-  return await db.dailyPlans.where({ date: dateStr }).first();
+  return await db.dailyPlans.where('date').equals(dateStr).first();
 }
 
 /**
