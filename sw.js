@@ -1,5 +1,5 @@
 /* sw.js */
-const CACHE_NAME = 'planflow-v1';
+const CACHE_NAME = 'planflow-v2';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
