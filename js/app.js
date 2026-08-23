@@ -1,7 +1,6 @@
 /* js/app.js */
 import { toReadableDate, today } from './utils/date.js';
 import db from './db.js';
-import { seedDatabase } from './seed.js';
 import { getPreferences } from './models/preferences.js';
 import { getPlanForDate, processEndOfDay, isStale } from './models/plan.js';
 import { runPipelineTests } from './engine/test-pipeline.js';
@@ -113,8 +112,13 @@ async function init() {
     window.PlanFlow.state.preferences = await getPreferences();
     console.log('[App] Preferences loaded');
 
-    // 2. Seed database with starter data if empty
-    await seedDatabase();
+    // One-time migration to clear auto-seeded demo tasks for clean user slate
+    if (localStorage.getItem('seed-tasks-cleaned') !== 'true') {
+      await db.tasks.clear();
+      await db.dailyPlans.clear();
+      localStorage.setItem('seed-tasks-cleaned', 'true');
+      console.log('[App] Database cleared of demo tasks for clean slate.');
+    }
 
     // 3. Process stale plans from previous days (midnight rollover / missed days)
     const plans = await db.dailyPlans.toArray();
