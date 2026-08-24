@@ -6,6 +6,128 @@ import { openModal, closeModal } from '../components/modal.js';
 import db from '../db.js';
 
 /**
+ * Escapes HTML special characters to prevent XSS.
+ * @param {string} str 
+ * @returns {string}
+ */
+export function escapeHTML(str) {
+  if (typeof str !== 'string') return str;
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+/**
+ * Validates the schema integrity of a backup data object.
+ * Checks root keys and required fields in tasks, dailyPlans, and preferences.
+ * @param {Object} data 
+ * @throws {Error} If validation fails
+ * @returns {boolean}
+ */
+export function validateImportSchema(data) {
+  if (!data || typeof data !== 'object') {
+    throw new Error('Invalid backup file: Root must be a valid JSON object');
+  }
+
+  if (!Array.isArray(data.tasks) || !Array.isArray(data.dailyPlans) || !Array.isArray(data.preferences)) {
+    throw new Error('Invalid backup file schema: Expected arrays for tasks, dailyPlans, and preferences');
+  }
+
+  // Validate tasks array
+  for (const task of data.tasks) {
+    if (!task || typeof task !== 'object') {
+      throw new Error('Invalid schema: Task entry must be an object');
+    }
+    if (!task.id || typeof task.id !== 'string') {
+      throw new Error('Invalid schema: Task missing valid id');
+    }
+    if (typeof task.name !== 'string') {
+      throw new Error('Invalid schema: Task missing valid name string');
+    }
+  }
+
+  // Validate daily plans
+  for (const plan of data.dailyPlans) {
+    if (!plan || typeof plan !== 'object') {
+      throw new Error('Invalid schema: Daily plan entry must be an object');
+    }
+    if (!plan.id || typeof plan.id !== 'string' || !plan.date || typeof plan.date !== 'string') {
+      throw new Error('Invalid schema: Daily plan missing valid id or date');
+    }
+    if (!Array.isArray(plan.plannedTasks)) {
+      throw new Error('Invalid schema: Daily plan missing plannedTasks array');
+    }
+  }
+
+  // Validate preferences
+  for (const pref of data.preferences) {
+    if (!pref || typeof pref !== 'object') {
+      throw new Error('Invalid schema: Preferences entry must be an object');
+    }
+    if (!pref.id || typeof pref.id !== 'string') {
+      throw new Error('Invalid schema: Preference missing valid id');
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Sanitizes and escapes text fields in backup data before insertion.
+ * @param {Object} data 
+ * @returns {Object} Sanitized data object
+ */
+export function sanitizeImportData(data) {
+  validateImportSchema(data);
+
+  const sanitizedTasks = data.tasks.map(task => {
+    const sanitized = { ...task };
+    if (typeof sanitized.name === 'string') {
+      sanitized.name = escapeHTML(sanitized.name);
+    }
+    if (typeof sanitized.description === 'string') {
+      sanitized.description = escapeHTML(sanitized.description);
+    }
+    if (typeof sanitized.bucket === 'string') {
+      sanitized.bucket = escapeHTML(sanitized.bucket);
+    }
+    return sanitized;
+  });
+
+  const sanitizedDailyPlans = data.dailyPlans.map(plan => {
+    const sanitized = { ...plan };
+    if (Array.isArray(sanitized.plannedTasks)) {
+      sanitized.plannedTasks = sanitized.plannedTasks.map(pt => ({
+        ...pt,
+        name: typeof pt.name === 'string' ? escapeHTML(pt.name) : pt.name,
+        bucket: typeof pt.bucket === 'string' ? escapeHTML(pt.bucket) : pt.bucket
+      }));
+    }
+    return sanitized;
+  });
+
+  const sanitizedPreferences = data.preferences.map(pref => {
+    const sanitized = { ...pref };
+    if (Array.isArray(sanitized.buckets)) {
+      sanitized.buckets = sanitized.buckets.map(b => ({
+        ...b,
+        name: typeof b.name === 'string' ? escapeHTML(b.name) : b.name
+      }));
+    }
+    return sanitized;
+  });
+
+  return {
+    tasks: sanitizedTasks,
+    dailyPlans: sanitizedDailyPlans,
+    preferences: sanitizedPreferences
+  };
+}
+
+/**
  * Initializes settings event listeners (inputs, exports, import file trigger, demo reset).
  */
 export function initSettingsView() {
@@ -85,21 +207,20 @@ export function initSettingsView() {
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
-        const data = JSON.parse(evt.target.result);
+        const rawData = JSON.parse(evt.target.result);
         
-        if (!data.tasks || !data.dailyPlans || !data.preferences) {
-          throw new Error('Invalid backup file schema');
-        }
+        // Validate schema and sanitize all HTML text fields
+        const cleanData = sanitizeImportData(rawData);
 
         if (confirm('Importing data will overwrite all current tasks, plans, and settings. Continue?')) {
           await db.tasks.clear();
           await db.dailyPlans.clear();
           await db.preferences.clear();
 
-          // Bulk add
-          await db.tasks.bulkAdd(data.tasks);
-          await db.dailyPlans.bulkAdd(data.dailyPlans);
-          await db.preferences.bulkAdd(data.preferences);
+          // Bulk add sanitized data
+          await db.tasks.bulkAdd(cleanData.tasks);
+          await db.dailyPlans.bulkAdd(cleanData.dailyPlans);
+          await db.preferences.bulkAdd(cleanData.preferences);
 
           showToast('Data imported successfully! Reloading...', 'success');
           setTimeout(() => {
@@ -107,8 +228,10 @@ export function initSettingsView() {
           }, 1500);
         }
       } catch (err) {
-        console.error(err);
-        showToast('Invalid backup JSON file', 'danger');
+        console.error('[Import Error]', err);
+        showToast(err.message || 'Invalid backup JSON file', 'danger');
+      } finally {
+        importFile.value = '';
       }
     };
     reader.readAsText(file);
@@ -262,6 +385,15 @@ function showAddBucketModal() {
   `;
 
   openModal('Create Bucket Category', content);
+
+  const handleEnter = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      document.getElementById('add-bucket-save')?.click();
+    }
+  };
+  content.querySelector('#new-bucket-name')?.addEventListener('keydown', handleEnter);
+  content.querySelector('#new-bucket-emoji')?.addEventListener('keydown', handleEnter);
 
   document.getElementById('add-bucket-cancel').addEventListener('click', closeModal);
   document.getElementById('add-bucket-save').addEventListener('click', async () => {

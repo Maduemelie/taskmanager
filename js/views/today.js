@@ -24,9 +24,9 @@ export function initTodayView() {
     });
   }
 
-  // Set interval to update the current time line position
+  // Set interval to update active task highlight
   if (timeIndicatorInterval) clearInterval(timeIndicatorInterval);
-  timeIndicatorInterval = setInterval(updateTimeIndicatorPosition, 60000); // every minute
+  timeIndicatorInterval = setInterval(updateActiveTaskHighlight, 60000); // every minute
 }
 
 /**
@@ -75,11 +75,8 @@ export async function renderTodayView() {
   if (activeSlots.length === 0) {
     container.innerHTML = '<div class="bucket-empty-state">All today\'s tasks were skipped or deferred.</div>';
   } else {
-    // Add current time indicator line
-    const timeLine = document.createElement('div');
-    timeLine.id = 'timeline-time-indicator';
-    timeLine.className = 'time-indicator-line';
-    container.appendChild(timeLine);
+    const now = new Date();
+    const currentMin = now.getHours() * 60 + now.getMinutes();
 
     activeSlots.forEach(slot => {
       let taskDetail = taskMap.get(slot.taskId);
@@ -120,15 +117,25 @@ export async function renderTodayView() {
       };
 
       const slotElement = renderTimeSlot(slot, taskDetail, callbacks);
+
+      // Check if this task is currently active based on system time, scheduled start time, and duration
+      const [h, m] = slot.scheduledTime.split(':').map(Number);
+      const startMin = h * 60 + m;
+      const endMin = startMin + slot.estimatedMinutes;
+      const isActive = currentMin >= startMin && currentMin < endMin && slot.status !== 'completed' && slot.status !== 'skipped';
+
+      if (isActive) {
+        slotElement.classList.add('is-active-task');
+        const card = slotElement.querySelector('.timeline-card');
+        if (card) card.classList.add('is-active-task');
+      }
+
       container.appendChild(slotElement);
     });
 
     // Stagger animate timeline slots
     const slots = container.querySelectorAll('.timeline-slot');
     stagger(slots, (el, delay) => slideUp(el, 15, 300, delay));
-
-    // Positions indicator line initially
-    setTimeout(updateTimeIndicatorPosition, 50);
   }
   const totalTasks = activeSlots.length;
   const completedTasks = activeSlots.filter(t => t.status === 'completed').length;
@@ -163,33 +170,28 @@ export async function renderTodayView() {
 }
 
 /**
- * Positions a horizontal red/orange indicator bar on the timeline reflecting current time.
+ * Dynamically determines and updates the currently active task card highlight in today's timeline.
  */
-async function updateTimeIndicatorPosition() {
-  const timeLine = document.getElementById('timeline-time-indicator');
-  if (!timeLine || !activePlan) return;
-
-  const prefs = await getPreferences();
-  const wakeTime = prefs.wakeTime || '07:00';
-  const sleepTime = prefs.sleepTime || '23:00';
-
-  const parseToMin = (tStr) => {
-    const [h, m] = tStr.split(':').map(Number);
-    return h * 60 + m;
-  };
-
+export function updateActiveTaskHighlight() {
+  if (!activePlan) return;
   const now = new Date();
   const currentMin = now.getHours() * 60 + now.getMinutes();
-  const startMin = parseToMin(wakeTime);
-  const endMin = parseToMin(sleepTime);
 
-  if (currentMin >= startMin && currentMin <= endMin) {
-    timeLine.style.display = 'block';
-    const percent = ((currentMin - startMin) / (endMin - startMin)) * 100;
-    timeLine.style.top = `calc(${percent}% - 1px)`;
-  } else {
-    timeLine.style.display = 'none';
-  }
+  const activeSlots = activePlan.plannedTasks.filter(t => t.status !== 'rescheduled');
+  activeSlots.forEach(slot => {
+    const slotEl = document.querySelector(`.timeline-slot[data-task-id="${slot.taskId}"]`);
+    if (!slotEl) return;
+    const card = slotEl.querySelector('.timeline-card');
+    const [h, m] = slot.scheduledTime.split(':').map(Number);
+    const startMin = h * 60 + m;
+    const endMin = startMin + slot.estimatedMinutes;
+    const isActive = currentMin >= startMin && currentMin < endMin && slot.status !== 'completed' && slot.status !== 'skipped';
+
+    slotEl.classList.toggle('is-active-task', isActive);
+    if (card) {
+      card.classList.toggle('is-active-task', isActive);
+    }
+  });
 }
 
 /**
@@ -209,6 +211,16 @@ function showCompletionMinutesModal(taskId, estimatedMinutes) {
   `;
 
   openModal('Log Completion', content);
+
+  const compMinInput = content.querySelector('#comp-minutes');
+  if (compMinInput) {
+    compMinInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        document.getElementById('comp-confirm-btn')?.click();
+      }
+    });
+  }
 
   document.getElementById('comp-cancel-btn').addEventListener('click', closeModal);
   document.getElementById('comp-confirm-btn').addEventListener('click', async () => {
@@ -237,12 +249,23 @@ function showCompletionMinutesModal(taskId, estimatedMinutes) {
 /**
  * Bottom sheet modal for quick-adding unplanned tasks ("Something Came Up").
  */
-function showInterruptionModal() {
+async function showInterruptionModal() {
+  const prefs = await getPreferences();
+  const bucketOptions = (prefs.buckets || []).map(b => 
+    `<option value="${b.id}">${b.emoji} ${b.name}</option>`
+  ).join('');
+
   const content = document.createElement('div');
   content.innerHTML = `
     <div class="form-group">
       <label class="form-label" for="inter-name">What came up? (Task Name)</label>
       <input type="text" id="inter-name" class="input" placeholder="e.g., Attend emergency client call" required>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="inter-bucket">Category / Bucket</label>
+      <select id="inter-bucket" class="select" required>
+        ${bucketOptions}
+      </select>
     </div>
     <div class="form-group">
       <label class="form-label">Estimated Duration</label>
@@ -261,6 +284,16 @@ function showInterruptionModal() {
   `;
 
   openModal('Something Came Up 🌊', content);
+
+  const interNameInput = content.querySelector('#inter-name');
+  if (interNameInput) {
+    interNameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        document.getElementById('inter-save-btn')?.click();
+      }
+    });
+  }
 
   // Duration preset triggers
   const presets = content.querySelectorAll('.duration-preset-btn');
@@ -288,6 +321,9 @@ function showInterruptionModal() {
       return;
     }
 
+    const bucketSelect = document.getElementById('inter-bucket');
+    const selectedBucket = bucketSelect ? bucketSelect.value : (prefs.buckets[0]?.id || 'home');
+
     const duration = parseInt(document.getElementById('inter-duration').value, 10);
     const now = new Date();
     const insertTime = formatTime(now.getHours(), now.getMinutes());
@@ -295,7 +331,7 @@ function showInterruptionModal() {
     // 1. Create a master task record in background so it can be loaded later
     const newTaskId = await createTask({
       name: nameInput.value.trim() + ' 🌊',
-      bucket: 'home',
+      bucket: selectedBucket,
       priority: 3,
       estimatedMinutes: duration,
       energyLevel: 'medium',
@@ -306,7 +342,7 @@ function showInterruptionModal() {
     const unplannedTask = {
       taskId: newTaskId,
       name: nameInput.value.trim(),
-      bucket: 'home',
+      bucket: selectedBucket,
       estimatedMinutes: duration
     };
 

@@ -65,4 +65,63 @@ describe('Recurrence & Active Rules Engine', () => {
     expect(isTaskDueOn(customTask, '2026-08-16')).toBeTruthy();
   });
 
+  it('should detect monthly recurring tasks on specified day of month', () => {
+    const monthlyTask = {
+      isActive: true,
+      isArchived: false,
+      createdAt: '2026-08-01T12:00:00.000Z',
+      recurrence: { 
+        type: 'monthly', 
+        interval: 1, 
+        dayOfMonth: 15 
+      }
+    };
+
+    expect(isTaskDueOn(monthlyTask, '2026-08-15')).toBeTruthy();
+    expect(isTaskDueOn(monthlyTask, '2026-08-14')).toBeFalsy();
+    expect(isTaskDueOn(monthlyTask, '2026-08-16')).toBeFalsy();
+    expect(isTaskDueOn(monthlyTask, '2026-09-15')).toBeTruthy();
+  });
+
+  it('should handle monthly recurring tasks set to day 31 on shorter months', () => {
+    const monthlyEndOfMonthTask = {
+      isActive: true,
+      isArchived: false,
+      createdAt: '2026-01-01T12:00:00.000Z',
+      recurrence: { 
+        type: 'monthly', 
+        interval: 1, 
+        dayOfMonth: 31 
+      }
+    };
+
+    // 31-day month (January)
+    expect(isTaskDueOn(monthlyEndOfMonthTask, '2026-01-31')).toBeTruthy();
+    expect(isTaskDueOn(monthlyEndOfMonthTask, '2026-01-30')).toBeFalsy();
+
+    // 28-day month (February 2026)
+    expect(isTaskDueOn(monthlyEndOfMonthTask, '2026-02-28')).toBeTruthy();
+    expect(isTaskDueOn(monthlyEndOfMonthTask, '2026-02-27')).toBeFalsy();
+
+    // 30-day month (April 2026)
+    expect(isTaskDueOn(monthlyEndOfMonthTask, '2026-04-30')).toBeTruthy();
+    expect(isTaskDueOn(monthlyEndOfMonthTask, '2026-04-29')).toBeFalsy();
+  });
+
+  it('should fallback to creation day for monthly recurrence when dayOfMonth is omitted', () => {
+    const legacyMonthlyTask = {
+      isActive: true,
+      isArchived: false,
+      createdAt: '2026-03-18T10:00:00.000Z',
+      recurrence: { 
+        type: 'monthly', 
+        interval: 1
+      }
+    };
+
+    expect(isTaskDueOn(legacyMonthlyTask, '2026-03-18')).toBeTruthy();
+    expect(isTaskDueOn(legacyMonthlyTask, '2026-03-17')).toBeFalsy();
+    expect(isTaskDueOn(legacyMonthlyTask, '2026-04-18')).toBeTruthy();
+  });
+
 });

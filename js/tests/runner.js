@@ -42,7 +42,6 @@ export function expect(actual) {
 
   const reportFail = (message) => {
     const errorMsg = `Assertion Failed: ${message}\nActual: ${JSON.stringify(actual)}\nTest: ${currentSuite ? currentSuite.name : 'Unknown'} > ${currentTest ? currentTest.name : 'Unknown'}`;
-    failures.push(errorMsg);
     throw new Error(errorMsg);
   };
 
@@ -142,9 +141,11 @@ export async function runAllTests() {
         console.log(`  %c✓ ${test.name}`, 'color: #5B8C5A;');
         testItem.innerHTML = `<span style="color:#5B8C5A;">✓</span> ${test.name}`;
       } catch (err) {
+        const errorDetail = err && err.message ? err.message : String(err);
+        failures.push(`${currentSuite ? currentSuite.name : 'Unknown'} > ${test.name}: ${errorDetail}`);
         console.log(`  %c✗ ${test.name}`, 'color: #D32F2F;');
-        console.error(err.message);
-        testItem.innerHTML = `<span style="color:#D32F2F; font-weight:bold;">✗ ${test.name}</span><pre style="color:#D32F2F; margin: 4px 0 12px 12px; font-size:0.8rem; overflow-x:auto;">${err.message}</pre>`;
+        console.error(errorDetail);
+        testItem.innerHTML = `<span style="color:#D32F2F; font-weight:bold;">✗ ${test.name}</span><pre style="color:#D32F2F; margin: 4px 0 12px 12px; font-size:0.8rem; overflow-x:auto;">${errorDetail}</pre>`;
       }
       
       if (reportEl) suiteDiv.appendChild(testItem);

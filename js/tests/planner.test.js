@@ -1,6 +1,7 @@
 /* js/tests/planner.test.js */
 import { describe, it, expect } from './runner.js';
 import { generateDayPlan } from '../engine/planner.js';
+import { rescheduleSequentially } from '../views/planDay.js';
 
 describe('Planner Engine Day Scheduler', () => {
 
@@ -73,6 +74,28 @@ describe('Planner Engine Day Scheduler', () => {
   it('should return empty list if capacity is zero', () => {
     const plan = generateDayPlan(mockTasks, preferences, 0, 'medium', '2026-08-20');
     expect(plan.length).toBe(0);
+  });
+
+  it('should sequentially re-assign start times without gaps when tasks are confirmed', () => {
+    const selected = [
+      { task: { id: 'task-1', estimatedMinutes: 45 } },
+      { task: { id: 'task-3', estimatedMinutes: 30 } }
+    ];
+    const rescheduled = rescheduleSequentially(selected, '07:00');
+    expect(rescheduled.length).toBe(2);
+    expect(rescheduled[0].scheduledTime).toBe('07:00');
+    expect(rescheduled[1].scheduledTime).toBe('07:45');
+  });
+
+  it('should format 24-hour rollover correctly across midnight in sequential rescheduling', () => {
+    const selected = [
+      { task: { id: 'night-1', estimatedMinutes: 45 } },
+      { task: { id: 'night-2', estimatedMinutes: 30 } }
+    ];
+    const rescheduled = rescheduleSequentially(selected, '23:30');
+    expect(rescheduled.length).toBe(2);
+    expect(rescheduled[0].scheduledTime).toBe('23:30');
+    expect(rescheduled[1].scheduledTime).toBe('00:15');
   });
 
 });

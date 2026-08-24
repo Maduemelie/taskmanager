@@ -1,15 +1,7 @@
-# Windows system files
-[Dd]esktop.ini
-Thumbs.db
+# Temporary directories
+.temp-chrome-profile/
+.agents/
 
-# macOS system files
+# OS specific files
 .DS_Store
-
-# IDE / Editor configuration
-.vscode/
-.idea/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+Thumbs.db

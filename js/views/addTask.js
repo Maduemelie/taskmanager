@@ -20,6 +20,7 @@ export function initAddTaskView() {
   const recOptions = document.getElementById('recurrence-options');
   const recType = document.getElementById('recurrence-type');
   const recWeeklyDays = document.getElementById('recurrence-weekly-days');
+  const recMonthlyGroup = document.getElementById('recurrence-monthly-group');
   const recIntervalGroup = document.getElementById('recurrence-interval-group');
 
   const deadlineToggle = document.getElementById('task-deadline-toggle');
@@ -78,6 +79,16 @@ export function initAddTaskView() {
   if (recToggle && recOptions) {
     recToggle.addEventListener('change', () => {
       recOptions.classList.toggle('hidden', !recToggle.checked);
+      if (recToggle.checked && recType) {
+        const type = recType.value;
+        if (recWeeklyDays) recWeeklyDays.classList.toggle('hidden', type !== 'weekly');
+        if (recMonthlyGroup) recMonthlyGroup.classList.toggle('hidden', type !== 'monthly');
+        if (recIntervalGroup) {
+          recIntervalGroup.classList.toggle('hidden', type !== 'custom');
+          const unit = document.getElementById('recurrence-interval-unit');
+          if (unit) unit.textContent = type === 'custom' ? 'days' : 'intervals';
+        }
+      }
     });
   }
 
@@ -86,6 +97,7 @@ export function initAddTaskView() {
     recType.addEventListener('change', () => {
       const type = recType.value;
       if (recWeeklyDays) recWeeklyDays.classList.toggle('hidden', type !== 'weekly');
+      if (recMonthlyGroup) recMonthlyGroup.classList.toggle('hidden', type !== 'monthly');
       if (recIntervalGroup) {
         recIntervalGroup.classList.toggle('hidden', type !== 'custom');
         const unit = document.getElementById('recurrence-interval-unit');
@@ -127,8 +139,8 @@ export function initAddTaskView() {
     });
   }
 
-  // Form Submit / Save
-  saveBtn.addEventListener('click', async (e) => {
+  // Form Submit / Save (handles both button click and Enter key on inputs)
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const taskNameInput = document.getElementById('task-name');
@@ -164,7 +176,9 @@ export function initAddTaskView() {
       }
 
       if (type === 'monthly') {
-        recurrence.dayOfMonth = new Date().getDate();
+        const monthDayInput = document.getElementById('recurrence-month-day');
+        const parsedDay = monthDayInput ? parseInt(monthDayInput.value, 10) : null;
+        recurrence.dayOfMonth = (parsedDay >= 1 && parsedDay <= 31) ? parsedDay : new Date().getDate();
       }
 
       taskData.recurrence = recurrence;
@@ -230,8 +244,12 @@ export async function renderAddTaskView() {
   document.getElementById('task-expiry-toggle').checked = false;
   document.getElementById('task-expiry').classList.add('hidden');
   document.getElementById('recurrence-weekly-days').classList.add('hidden');
+  document.getElementById('recurrence-monthly-group')?.classList.add('hidden');
   document.getElementById('recurrence-interval-group').classList.add('hidden');
   
+  const monthDayReset = document.getElementById('recurrence-month-day');
+  if (monthDayReset) monthDayReset.value = new Date().getDate();
+
   // Reset energy to Medium
   document.querySelectorAll('#task-energy-selector .energy-option').forEach(o => o.classList.remove('selected'));
   document.querySelector('#task-energy-selector .energy-option[data-energy="medium"]').classList.add('selected');
@@ -282,6 +300,11 @@ export async function renderAddTaskView() {
               if (el) el.checked = true;
             });
           }
+        } else if (task.recurrence.type === 'monthly') {
+          const recMonthlyGroup = document.getElementById('recurrence-monthly-group');
+          if (recMonthlyGroup) recMonthlyGroup.classList.remove('hidden');
+          const monthDayInput = document.getElementById('recurrence-month-day');
+          if (monthDayInput) monthDayInput.value = task.recurrence.dayOfMonth || new Date().getDate();
         } else if (task.recurrence.type === 'custom') {
           document.getElementById('recurrence-interval-group').classList.remove('hidden');
           document.getElementById('recurrence-interval').value = task.recurrence.interval || 1;

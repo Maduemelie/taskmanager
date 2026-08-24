@@ -176,8 +176,11 @@ async function init() {
     }
   });
 
-  // Run planning engine pipeline tests in console (Phase 3 validation)
-  runPipelineTests();
+  // Run planning engine pipeline tests in console only when URL contains ?test=true
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('test') === 'true') {
+    runPipelineTests();
+  }
 
   // Register PWA Service Worker
   registerServiceWorker();

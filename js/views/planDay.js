@@ -1,16 +1,42 @@
 /* js/views/planDay.js */
+import db from '../db.js';
 import { generateDayPlan } from '../engine/planner.js';
 import { getTodayPlan, createPlan, updatePlan } from '../models/plan.js';
 import { getActiveTasks } from '../models/task.js';
 import { getPreferences } from '../models/preferences.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
-import { today } from '../utils/date.js';
+import { today, formatTime } from '../utils/date.js';
 import { stagger, slideUp } from '../utils/animate.js';
 
 let activeEnergy = 'medium';
 let generatedSuggestions = []; // Array of { task, isChecked }
 let initialCapacity = 180; // Default capacity in minutes (3 hours)
+
+/**
+ * Helper to sequentially assign start times to a list of tasks starting from wake time.
+ * Prevents timeline gaps when tasks are unchecked.
+ */
+export function rescheduleSequentially(selectedTasks, wakeTime = '07:00') {
+  const [startH, startM] = wakeTime.split(':').map(Number);
+  let currentMinutes = startH * 60 + startM;
+
+  return selectedTasks.map(item => {
+    const h = Math.floor(currentMinutes / 60) % 24;
+    const m = currentMinutes % 60;
+    const scheduledTime = formatTime(h, m);
+    const taskObj = item.task || item;
+    const duration = taskObj.estimatedMinutes || 30;
+    const taskId = taskObj.id || item.taskId;
+    currentMinutes += duration;
+    return {
+      taskId: taskId,
+      estimatedMinutes: duration,
+      scheduledTime: scheduledTime,
+      isUnplanned: false
+    };
+  });
+}
 
 /**
  * Initializes listeners for sliders, energy chips, presets, and action buttons in Plan view.
@@ -108,16 +134,10 @@ export function initPlanDayView() {
         return;
       }
 
-      // Re-assign times sequentially to the finalized list
+      // Re-assign times sequentially to the finalized checked list
       const prefs = await getPreferences();
-      
-      // Save plan to database
-      const plannedTasksInput = selectedTasks.map(item => ({
-        taskId: item.task.id,
-        estimatedMinutes: item.task.estimatedMinutes,
-        scheduledTime: item.scheduledTime,
-        isUnplanned: false
-      }));
+      const wakeTime = prefs.wakeTime || '07:00';
+      const plannedTasksInput = rescheduleSequentially(selectedTasks, wakeTime);
 
       await createPlan(today(), initialCapacity, plannedTasksInput);
       showToast('Daily plan created! Let\'s focus ✨', 'success');

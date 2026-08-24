@@ -9,10 +9,12 @@ import { daysBetween, formatDateLocal } from '../utils/date.js';
  * @returns {boolean}
  */
 export function isTaskActive(task, dateStr) {
-  if (!task.isActive || task.isArchived) return false;
+  if (!task || !task.isActive || task.isArchived) return false;
   
-  const createdDate = task.createdAt.split('T')[0];
-  if (dateStr < createdDate) return false;
+  if (task.createdAt) {
+    const createdDate = task.createdAt.split('T')[0];
+    if (dateStr < createdDate) return false;
+  }
   
   if (task.activeUntil && dateStr > task.activeUntil) return false;
   
@@ -31,7 +33,9 @@ export function isTaskDueOn(task, dateStr) {
   if (!isTaskActive(task, dateStr)) return false;
 
   // 2. Check if already completed on this date
-  const completedOnDate = task.completionHistory.some(entry => entry.date === dateStr);
+  const completedOnDate = Array.isArray(task.completionHistory)
+    ? task.completionHistory.some(entry => entry && entry.date === dateStr)
+    : false;
   if (completedOnDate) return false;
 
   // 3. Non-recurring tasks
@@ -43,20 +47,21 @@ export function isTaskDueOn(task, dateStr) {
   // 4. Recurring tasks dispatcher
   const { type, interval = 1 } = task.recurrence;
   const lastCompDateStr = task.lastCompletedAt ? task.lastCompletedAt.split('T')[0] : null;
+  const createdDateStr = task.createdAt ? task.createdAt.split('T')[0] : dateStr;
 
   switch (type) {
     case 'daily':
-      return isDailyDue(dateStr, lastCompDateStr, task.createdAt.split('T')[0], interval);
+      return isDailyDue(dateStr, lastCompDateStr, createdDateStr, interval);
       
     case 'weekly':
-      return isWeeklyDue(dateStr, lastCompDateStr, task.createdAt.split('T')[0], interval, task.recurrence.daysOfWeek);
+      return isWeeklyDue(dateStr, lastCompDateStr, createdDateStr, interval, task.recurrence.daysOfWeek);
       
     case 'monthly':
-      return isMonthlyDue(dateStr, lastCompDateStr, task.createdAt.split('T')[0], interval, task.recurrence.dayOfMonth);
+      return isMonthlyDue(dateStr, lastCompDateStr, createdDateStr, interval, task.recurrence.dayOfMonth);
       
     case 'custom':
       // custom acts like daily every N days
-      return isDailyDue(dateStr, lastCompDateStr, task.createdAt.split('T')[0], interval);
+      return isDailyDue(dateStr, lastCompDateStr, createdDateStr, interval);
       
     default:
       return false;
@@ -71,13 +76,13 @@ export function isTaskDueOn(task, dateStr) {
  * @returns {string|null} The next due date as YYYY-MM-DD or null
  */
 export function getNextDueDate(task, afterDateStr) {
-  if (!task.isActive || task.isArchived) return null;
+  if (!task || !task.isActive || task.isArchived) return null;
   
   // Non-recurring task never completed
   if (!task.recurrence) {
     if (!task.lastCompletedAt) {
       // It's due immediately
-      const createdDate = task.createdAt.split('T')[0];
+      const createdDate = task.createdAt ? task.createdAt.split('T')[0] : afterDateStr;
       return afterDateStr >= createdDate ? afterDateStr : createdDate;
     }
     return null; // already completed
@@ -97,15 +102,19 @@ export function getNextDueDate(task, afterDateStr) {
 
 /* --- Recurrence Type Helpers --- */
 
-function isDailyDue(dateStr, lastCompletedDateStr, createdDateStr, interval) {
-  if (!lastCompletedDateStr) {
-    // Never completed. Due if days since creation is a multiple of interval, or just due on any day.
-    // In our system, if it's never been done, it's due today.
-    return true;
+function isDailyDue(dateStr, lastCompletedDateStr, createdDateStr, interval = 1) {
+  if (interval === 1) {
+    if (!lastCompletedDateStr) {
+      return true;
+    }
+    const diff = daysBetween(lastCompletedDateStr, dateStr);
+    return diff >= 1;
   }
   
-  const diff = daysBetween(lastCompletedDateStr, dateStr);
-  return diff >= interval;
+  // For custom intervals (every N days)
+  const baseDateStr = lastCompletedDateStr || createdDateStr;
+  const diff = daysBetween(baseDateStr, dateStr);
+  return diff >= 0 && (diff % interval === 0);
 }
 
 function isWeeklyDue(dateStr, lastCompletedDateStr, createdDateStr, interval, daysOfWeek) {
@@ -138,9 +147,11 @@ function isMonthlyDue(dateStr, lastCompletedDateStr, createdDateStr, interval, d
   const queryDate = new Date(dateStr + 'T00:00:00');
   const queryDayOfMonth = queryDate.getDate();
 
-  // 1. Is it the correct day of month?
+  // 1. Is it the correct day of month? Clamped to month length for shorter months (e.g. Feb, Apr)
   const targetDay = dayOfMonth || new Date(createdDateStr + 'T00:00:00').getDate();
-  if (queryDayOfMonth !== targetDay) return false;
+  const daysInMonth = new Date(queryDate.getFullYear(), queryDate.getMonth() + 1, 0).getDate();
+  const effectiveDay = Math.min(targetDay, daysInMonth);
+  if (queryDayOfMonth !== effectiveDay) return false;
 
   if (!lastCompletedDateStr) {
     return true;

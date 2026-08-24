@@ -109,9 +109,10 @@ export async function recordCompletion(taskId, actualMinutes) {
   };
 
   // Prevent multiple completions on the same day for streak counts
-  const alreadyCompletedToday = task.completionHistory.some(entry => entry.date === completionDate);
+  const historyList = Array.isArray(task.completionHistory) ? task.completionHistory : [];
+  const alreadyCompletedToday = historyList.some(entry => entry && entry.date === completionDate);
 
-  const updatedHistory = [...task.completionHistory, completionEntry];
+  const updatedHistory = [...historyList, completionEntry];
   const lastCompletedAt = completionEntry.completedAt;
 
   let currentStreak = task.currentStreak;
@@ -213,7 +214,8 @@ export async function getOverdueTasks(dateStr = today()) {
   
   return activeTasks.filter(task => {
     // Check if completed today
-    const completedToday = task.completionHistory.some(entry => entry.date === dateStr);
+    const historyList = Array.isArray(task.completionHistory) ? task.completionHistory : [];
+    const completedToday = historyList.some(entry => entry && entry.date === dateStr);
     if (completedToday) return false;
 
     // Non-recurring task with deadline in the past

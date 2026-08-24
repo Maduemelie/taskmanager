@@ -183,26 +183,25 @@ section.view.active {
   justify-content: center;
 }
 
-/* Timeline current time indicator line */
-.time-indicator-line {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background-color: var(--primary-color);
-  z-index: 10;
-  pointer-events: none;
+/* Current Active Task Card Highlight (Border-based) */
+.timeline-slot.is-active-task .timeline-card,
+.timeline-card.is-active-task {
+  border: 2px solid var(--primary-color) !important;
+  border-left: 5px solid var(--primary-color) !important;
+  box-shadow: 0 0 0 3px rgba(232, 112, 58, 0.25), var(--shadow-md) !important;
+  animation: activeTaskPulse 2s infinite ease-in-out;
 }
 
-.time-indicator-line::before {
-  content: '';
-  position: absolute;
-  left: 8px;
-  top: -4px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background-color: var(--primary-color);
+@keyframes activeTaskPulse {
+  0% {
+    box-shadow: 0 0 0 2px rgba(232, 112, 58, 0.4), var(--shadow-sm);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(232, 112, 58, 0.15), var(--shadow-md);
+  }
+  100% {
+    box-shadow: 0 0 0 2px rgba(232, 112, 58, 0.4), var(--shadow-sm);
+  }
 }
 
 /* --- Bucket Grid View --- */

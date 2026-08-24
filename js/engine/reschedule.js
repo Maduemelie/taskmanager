@@ -52,7 +52,7 @@ export function rescheduleRemaining(plan, fromTime, minutesToShift, excludeTaskI
       const taskMin = parseTimeToMinutes(t.scheduledTime);
       if (taskMin >= fromMin) {
         const newMin = taskMin + minutesToShift;
-        const newHour = Math.floor(newMin / 60);
+        const newHour = Math.floor(newMin / 60) % 24;
         const newMins = newMin % 60;
         
         return {

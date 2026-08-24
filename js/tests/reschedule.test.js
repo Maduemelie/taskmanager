@@ -49,4 +49,17 @@ describe('Reschedule & Overflow Engine', () => {
     expect(t3.status).toBe('rescheduled');
   });
 
+  it('should format 24-hour rollover across midnight when tasks shift past 23:59', () => {
+    const latePlan = {
+      id: 'plan-late',
+      capacity: 120,
+      plannedTasks: [
+        { taskId: 'late-1', scheduledTime: '23:45', estimatedMinutes: 30, status: 'pending', isUnplanned: false }
+      ]
+    };
+    const shifted = rescheduleRemaining(latePlan, '23:00', 30);
+    const t1 = shifted.plannedTasks.find(t => t.taskId === 'late-1');
+    expect(t1.scheduledTime).toBe('00:15');
+  });
+
 });

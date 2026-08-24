@@ -91,6 +91,12 @@ function showScreen2(container) {
     </button>
   `;
 
+  // Entrance slide-in/fade-in animation
+  container.animate([
+    { opacity: 0, transform: 'translateX(30px)' },
+    { opacity: 1, transform: 'translateX(0)' }
+  ], { duration: 250, easing: 'ease-out' });
+
   const slider = document.getElementById('onboard-capacity-slider');
   const display = document.getElementById('onboard-capacity-display');
 
@@ -128,6 +134,12 @@ function showScreen3(container) {
       </button>
     </div>
   `;
+
+  // Entrance slide-in/fade-in animation
+  container.animate([
+    { opacity: 0, transform: 'translateX(30px)' },
+    { opacity: 1, transform: 'translateX(0)' }
+  ], { duration: 250, easing: 'ease-out' });
 
   document.getElementById('onboard-demo').addEventListener('click', async () => {
     await updatePreferences({ defaultCapacity: onboardingCapacity });
