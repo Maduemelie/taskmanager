@@ -17,6 +17,7 @@ export function initAddTaskView() {
   const energyOptions = document.querySelectorAll('#task-energy-selector .energy-option');
   
   const recToggle = document.getElementById('task-recurring-toggle');
+  const habitToggle = document.getElementById('task-habit-toggle');
   const recOptions = document.getElementById('recurrence-options');
   const recType = document.getElementById('recurrence-type');
   const recWeeklyDays = document.getElementById('recurrence-weekly-days');
@@ -157,6 +158,7 @@ export function initAddTaskView() {
       energyLevel: selectedEnergy,
       preferredTime: document.getElementById('task-preferred-time').value,
       recurrence: null,
+      isHabit: habitToggle ? habitToggle.checked : false,
       deadline: deadlineToggle.checked ? deadlineInput.value || null : null,
       activeUntil: expiryToggle.checked ? expiryInput.value || null : null
     };
@@ -239,6 +241,8 @@ export async function renderAddTaskView() {
   // Hide details sub-menus
   document.getElementById('recurrence-options').classList.add('hidden');
   document.getElementById('task-recurring-toggle').checked = false;
+  const resetHabitToggle = document.getElementById('task-habit-toggle');
+  if (resetHabitToggle) resetHabitToggle.checked = false;
   document.getElementById('task-deadline-toggle').checked = false;
   document.getElementById('task-deadline').classList.add('hidden');
   document.getElementById('task-expiry-toggle').checked = false;
@@ -282,6 +286,9 @@ export async function renderAddTaskView() {
       });
 
       document.getElementById('task-preferred-time').value = task.preferredTime;
+
+      const editHabitToggle = document.getElementById('task-habit-toggle');
+      if (editHabitToggle) editHabitToggle.checked = !!task.isHabit;
 
       // Recurrence Pre-fills
       if (task.recurrence) {

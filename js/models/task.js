@@ -18,6 +18,7 @@ export async function createTask(taskData) {
     energyLevel: 'medium',
     preferredTime: 'anytime',
     recurrence: null, // e.g. { type: 'daily' } or { type: 'weekly', daysOfWeek: [1, 3] }
+    isHabit: false, // Track as a binary Habit (calendar view)
     deadline: null,
     activeUntil: null,
     createdAt: new Date().toISOString(),

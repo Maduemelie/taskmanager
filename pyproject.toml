@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ai_content"
+version = "0.1.0"
+description = "Git commit AI content generator powered by CrewAI and Google Gemini"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "crewai>=1.15.0",
+    "google-genai>=0.1.1",
+    "click>=8.1.0",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "pytest>=8.0.0",
+]
+
+[project.scripts]
+ai-content = "ai_content.cli:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ai_content"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["test/ai-content", "ai_content/tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_functions = ["test_*"]
+addopts = "-v --strict-markers"

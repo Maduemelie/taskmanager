@@ -144,6 +144,16 @@ export function renderTaskCard(task, mode, callbacks = {}) {
     metaRow.appendChild(rec);
   }
 
+  // Habit label
+  if (task.isHabit) {
+    const habitBadge = document.createElement('span');
+    habitBadge.className = 'chip';
+    habitBadge.style.backgroundColor = '#e8f5e9'; // var(--secondary-light) fallback
+    habitBadge.style.color = 'var(--secondary-color)';
+    habitBadge.innerHTML = `📈 Habit`;
+    metaRow.appendChild(habitBadge);
+  }
+
   cardContent.appendChild(metaRow);
   card.appendChild(cardContent);
 

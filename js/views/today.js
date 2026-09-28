@@ -9,6 +9,7 @@ import { addUnplannedTask, rescheduleRemaining, suggestDeferrals, applyDeferrals
 import { today, formatTime } from '../utils/date.js';
 import { stagger, slideUp, popEffect } from '../utils/animate.js';
 import { triggerHaptic } from '../utils/haptics.js';
+import { showHabitCalendarModal } from '../components/habitCalendar.js';
 
 let activePlan = null;
 let timeIndicatorInterval = null;
@@ -96,12 +97,26 @@ export async function renderTodayView() {
 
       const callbacks = {
         onStart: async (taskId) => {
+          if (taskDetail.isHabit) {
+            showHabitCalendarModal(taskDetail, activePlan.id, async () => {
+              await markTaskStatus(activePlan.id, taskId, 'completed', 0);
+              renderTodayView();
+            });
+            return;
+          }
           triggerHaptic(10);
           await markTaskStatus(activePlan.id, taskId, 'in-progress');
           showToast('Task started! Focus time ⚡', 'info');
           renderTodayView();
         },
         onComplete: async (taskId) => {
+          if (taskDetail.isHabit) {
+            triggerHaptic(15);
+            await markTaskStatus(activePlan.id, taskId, 'completed', 0);
+            showToast('Habit tracked! 🎉', 'success');
+            renderTodayView();
+            return;
+          }
           // Open quick completion modal asking actual time
           showCompletionMinutesModal(taskId, slot.estimatedMinutes);
         },
@@ -112,6 +127,13 @@ export async function renderTodayView() {
           renderTodayView();
         },
         onEdit: (taskId) => {
+          if (taskDetail.isHabit) {
+            showHabitCalendarModal(taskDetail, activePlan.id, async () => {
+              await markTaskStatus(activePlan.id, taskId, 'completed', 0);
+              renderTodayView();
+            });
+            return;
+          }
           window.location.hash = `#add-task?id=${taskId}`;
         }
       };
