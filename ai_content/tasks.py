@@ -103,6 +103,7 @@ def create_technical_writer_task(
 4. Footer citation: `_Commit {git_context.sha} by {git_context.author_name} on {git_context.date}_`.
 
 Ensure the article is technically rigorous, contains well-fenced code blocks where applicable, exceeds 50 characters, and contains zero hallucinations.
+Do NOT use asterisks (*) for text formatting like bold (**text**) or italics (*text*). Use plain text instead.
 """
     expected_output = (
         f"A complete publication-ready technical Markdown article for commit {git_context.short_sha} "
@@ -140,15 +141,16 @@ def create_journal_writer_task(
 ### Required Structure & Tone:
 1. Title: `# Development Journal — {git_context.short_sha}` (you may append `: {git_context.message_subject}`)
 2. Metadata bullet points:
-   - **Date**: {git_context.date}
-   - **Commit**: `{git_context.sha}` ({git_context.short_sha})
-   - **Author**: {git_context.author_name}
+   - Date: {git_context.date}
+   - Commit: `{git_context.sha}` ({git_context.short_sha})
+   - Author: {git_context.author_name}
 3. Mandatory Sections:
    - `## Session Overview` (First-person narrative describing what was built or refactored and why)
    - `## Engineering Challenges & Decisions` (Real-world friction, trade-offs, debugging, and why specific approaches were chosen)
    - `## Next Steps` (Immediate follow-up items, verification goals, and upcoming work)
 
 Adopt an honest developer voice. Make sure the short SHA '{git_context.short_sha}' and full SHA are clearly cited. Minimum 30 characters.
+Do NOT use asterisks (*) for text formatting like bold (**text**) or italics (*text*). Use plain text instead.
 """
     expected_output = (
         f"A reflective Markdown developer journal entry starting with '# Development Journal — {git_context.short_sha}', "
@@ -183,6 +185,8 @@ def create_social_writer_task(
    - `3/5`: Implementation highlight or clever code technique.
    - `4/5`: Main technical takeaway or lesson learned.
    - `5/5`: Call-to-action mentioning the article path `content/articles/{git_context.sha}-<slug>.md` and hashtags #devlog #coding #ai.
+   
+CRITICAL: Do NOT use asterisks (*) for text formatting like bold (**text**) or italics (*text*). Use plain text instead.
 """
     expected_output = (
         f"A 5-tweet Markdown social thread for commit {git_context.short_sha} with tweets numbered "
@@ -229,6 +233,7 @@ Inspect the drafts against the DevelopmentSessionReport and Git commit metadata:
 4. Markdown Quality:
    - Ensure all code blocks are properly fenced with triple backticks and language tags.
    - Ensure no broken links or malformed markdown.
+   - CRITICAL: Do NOT use asterisks (*) for text formatting like bold (**text**) or italics (*text*) in the article, journal, or social thread. Use plain text instead.
 
 Format your output with clear delimiter blocks so the publications can be extracted and written to disk:
 ===ARTICLE===
