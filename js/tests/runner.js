@@ -112,7 +112,7 @@ export async function runAllTests() {
   let testsCount = 0;
   let testsPassed = 0;
   
-  const reportEl = document.getElementById('test-report');
+  const reportEl = typeof document !== 'undefined' ? document.getElementById('test-report') : null;
   if (reportEl) {
     reportEl.innerHTML = '<h2>Running Tests...</h2>';
   }
@@ -120,35 +120,41 @@ export async function runAllTests() {
   for (const suite of suites) {
     console.log(`%cSuite: ${suite.name}`, 'font-weight: bold; color: #E8703A;');
     
-    const suiteDiv = document.createElement('div');
-    suiteDiv.style.marginBottom = 'var(--spacing-md)';
-    suiteDiv.innerHTML = `<h3 style="margin-bottom:8px; border-bottom: 1px solid var(--border-color); padding-bottom: 4px;">${suite.name}</h3>`;
-    if (reportEl) reportEl.appendChild(suiteDiv);
+    let suiteDiv = null;
+    if (reportEl) {
+      suiteDiv = document.createElement('div');
+      suiteDiv.style.marginBottom = 'var(--spacing-md)';
+      suiteDiv.innerHTML = `<h3 style="margin-bottom:8px; border-bottom: 1px solid var(--border-color); padding-bottom: 4px;">${suite.name}</h3>`;
+      reportEl.appendChild(suiteDiv);
+    }
 
     for (const test of suite.tests) {
       testsCount++;
       currentSuite = suite;
       currentTest = test;
       
-      const testItem = document.createElement('div');
-      testItem.style.paddingLeft = 'var(--spacing-md)';
-      testItem.style.fontSize = '0.9rem';
-      testItem.style.marginBottom = '4px';
+      let testItem = null;
+      if (reportEl) {
+        testItem = document.createElement('div');
+        testItem.style.paddingLeft = 'var(--spacing-md)';
+        testItem.style.fontSize = '0.9rem';
+        testItem.style.marginBottom = '4px';
+      }
 
       try {
         await test.fn();
         testsPassed++;
         console.log(`  %c✓ ${test.name}`, 'color: #5B8C5A;');
-        testItem.innerHTML = `<span style="color:#5B8C5A;">✓</span> ${test.name}`;
+        if (testItem) testItem.innerHTML = `<span style="color:#5B8C5A;">✓</span> ${test.name}`;
       } catch (err) {
         const errorDetail = err && err.message ? err.message : String(err);
         failures.push(`${currentSuite ? currentSuite.name : 'Unknown'} > ${test.name}: ${errorDetail}`);
         console.log(`  %c✗ ${test.name}`, 'color: #D32F2F;');
         console.error(errorDetail);
-        testItem.innerHTML = `<span style="color:#D32F2F; font-weight:bold;">✗ ${test.name}</span><pre style="color:#D32F2F; margin: 4px 0 12px 12px; font-size:0.8rem; overflow-x:auto;">${errorDetail}</pre>`;
+        if (testItem) testItem.innerHTML = `<span style="color:#D32F2F; font-weight:bold;">✗ ${test.name}</span><pre style="color:#D32F2F; margin: 4px 0 12px 12px; font-size:0.8rem; overflow-x:auto;">${errorDetail}</pre>`;
       }
       
-      if (reportEl) suiteDiv.appendChild(testItem);
+      if (reportEl && suiteDiv && testItem) suiteDiv.appendChild(testItem);
     }
   }
 

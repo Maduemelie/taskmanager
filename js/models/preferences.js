@@ -8,6 +8,7 @@ const DEFAULT_PREFERENCES = {
   defaultCapacity: 300, // minutes
   wakeTime: '07:00',
   sleepTime: '23:00',
+  bufferMinutes: 10, // minutes between tasks for breathing room/transitions
   energyCurve: {
     morning: 'high',
     afternoon: 'medium',

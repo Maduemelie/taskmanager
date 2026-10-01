@@ -92,11 +92,11 @@ LOG_FILE="$LOGS_DIR/post-commit.log"
 
 cd "$REPO_ROOT" || exit 0
 
-# 6. Spawn content generator asynchronously
+# 6. Spawn content generator
 if command -v uv >/dev/null 2>&1; then
-    uv run python -m ai_content.cli generate "$COMMIT_SHA" >> content/logs/post-commit.log 2>&1 < /dev/null &
+    uv run python -m ai_content.cli generate "$COMMIT_SHA" >> content/logs/post-commit.log 2>&1 < /dev/null
 else
-    python -m ai_content.cli generate "$COMMIT_SHA" >> content/logs/post-commit.log 2>&1 < /dev/null &
+    python -m ai_content.cli generate "$COMMIT_SHA" >> content/logs/post-commit.log 2>&1 < /dev/null
 fi
 
 exit 0

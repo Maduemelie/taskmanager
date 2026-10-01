@@ -6,7 +6,7 @@ import { getActiveTasks } from '../models/task.js';
 import { getPreferences } from '../models/preferences.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
-import { today, formatTime } from '../utils/date.js';
+import { today, formatTime, formatTime12 } from '../utils/date.js';
 import { stagger, slideUp } from '../utils/animate.js';
 
 let activeEnergy = 'medium';
@@ -14,11 +14,30 @@ let generatedSuggestions = []; // Array of { task, isChecked }
 let initialCapacity = 180; // Default capacity in minutes (3 hours)
 
 /**
- * Helper to sequentially assign start times to a list of tasks starting from wake time.
+ * Calculates real-time start time if planning for today after wake time.
+ * Rounds up to the nearest 15-minute mark.
+ */
+export function getEffectiveStartTime(wakeTime = '07:00') {
+  const [wakeH, wakeM] = wakeTime.split(':').map(Number);
+  const wakeMin = wakeH * 60 + wakeM;
+  const now = new Date();
+  const currentMin = now.getHours() * 60 + now.getMinutes();
+
+  if (currentMin > wakeMin) {
+    const roundedMin = Math.ceil(currentMin / 15) * 15;
+    const h = Math.floor(roundedMin / 60) % 24;
+    const m = roundedMin % 60;
+    return formatTime(h, m);
+  }
+  return wakeTime;
+}
+
+/**
+ * Helper to sequentially assign start times to a list of tasks with transition buffers.
  * Prevents timeline gaps when tasks are unchecked.
  */
-export function rescheduleSequentially(selectedTasks, wakeTime = '07:00') {
-  const [startH, startM] = wakeTime.split(':').map(Number);
+export function rescheduleSequentially(selectedTasks, startTime = '07:00', bufferMinutes = 10) {
+  const [startH, startM] = startTime.split(':').map(Number);
   let currentMinutes = startH * 60 + startM;
 
   return selectedTasks.map(item => {
@@ -28,7 +47,7 @@ export function rescheduleSequentially(selectedTasks, wakeTime = '07:00') {
     const taskObj = item.task || item;
     const duration = taskObj.estimatedMinutes || 30;
     const taskId = taskObj.id || item.taskId;
-    currentMinutes += duration;
+    currentMinutes += duration + bufferMinutes;
     return {
       taskId: taskId,
       estimatedMinutes: duration,
@@ -137,7 +156,9 @@ export function initPlanDayView() {
       // Re-assign times sequentially to the finalized checked list
       const prefs = await getPreferences();
       const wakeTime = prefs.wakeTime || '07:00';
-      const plannedTasksInput = rescheduleSequentially(selectedTasks, wakeTime);
+      const effectiveStartTime = getEffectiveStartTime(wakeTime);
+      const bufferMinutes = typeof prefs.bufferMinutes === 'number' ? prefs.bufferMinutes : 10;
+      const plannedTasksInput = rescheduleSequentially(selectedTasks, effectiveStartTime, bufferMinutes);
 
       await createPlan(today(), initialCapacity, plannedTasksInput);
       showToast('Daily plan created! Let\'s focus ✨', 'success');
@@ -290,7 +311,7 @@ function renderSuggestionsList() {
     card.style.padding = 'var(--spacing-md)';
 
     const details = document.createElement('div');
-    details.innerHTML = `<span style="font-size:0.75rem; color:var(--text-light); font-weight:800; display:block;">[${item.scheduledTime}]</span><span style="font-weight:700;">${item.task.name}</span>`;
+    details.innerHTML = `<span style="font-size:0.75rem; color:var(--text-light); font-weight:800; display:block;">[${formatTime12(item.scheduledTime)}]</span><span style="font-weight:700;">${item.task.name}</span>`;
 
     const meta = document.createElement('div');
     meta.innerHTML = `<span class="chip" style="font-size:0.75rem;">⏱️ ${item.task.estimatedMinutes}m</span>`;

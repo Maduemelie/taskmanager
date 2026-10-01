@@ -133,6 +133,7 @@ export function sanitizeImportData(data) {
 export function initSettingsView() {
   const wakeInput = document.getElementById('settings-wake-time');
   const sleepInput = document.getElementById('settings-sleep-time');
+  const bufferInput = document.getElementById('settings-buffer-time');
   const capacityInput = document.getElementById('settings-default-capacity');
   const capacityDisplay = document.getElementById('settings-capacity-display');
   
@@ -144,7 +145,7 @@ export function initSettingsView() {
 
   if (!resetBtn) return;
 
-  // 1. Wake & Sleep times changes
+  // 1. Wake, Sleep, & Buffer times changes
   wakeInput.addEventListener('change', async (e) => {
     await updatePreferences({ wakeTime: e.target.value });
     showToast('Wake time updated', 'success');
@@ -154,6 +155,14 @@ export function initSettingsView() {
     await updatePreferences({ sleepTime: e.target.value });
     showToast('Sleep time updated', 'success');
   });
+
+  if (bufferInput) {
+    bufferInput.addEventListener('change', async (e) => {
+      const val = parseInt(e.target.value, 10);
+      await updatePreferences({ bufferMinutes: val });
+      showToast('Buffer time between tasks updated', 'success');
+    });
+  }
 
   // 2. Capacity Slider
   capacityInput.addEventListener('input', (e) => {
@@ -256,6 +265,7 @@ export function initSettingsView() {
 export async function renderSettingsView() {
   const wakeInput = document.getElementById('settings-wake-time');
   const sleepInput = document.getElementById('settings-sleep-time');
+  const bufferInput = document.getElementById('settings-buffer-time');
   const capacityInput = document.getElementById('settings-default-capacity');
   const capacityDisplay = document.getElementById('settings-capacity-display');
   const bucketList = document.getElementById('settings-buckets-list');
@@ -267,6 +277,9 @@ export async function renderSettingsView() {
   // Populate basic configurations
   wakeInput.value = prefs.wakeTime || '07:00';
   sleepInput.value = prefs.sleepTime || '23:00';
+  if (bufferInput) {
+    bufferInput.value = String(prefs.bufferMinutes ?? 10);
+  }
   
   const capVal = prefs.defaultCapacity || 300;
   capacityInput.value = capVal;

@@ -1,7 +1,7 @@
 /* js/engine/planner.js */
 import { scoreTask } from './scoring.js';
 import { isTaskDueOn } from './recurrence.js';
-import { today, formatTime } from '../utils/date.js';
+import { today, formatTime, isToday } from '../utils/date.js';
 
 /**
  * Generates today's suggested plan from the available active tasks.
@@ -9,16 +9,40 @@ import { today, formatTime } from '../utils/date.js';
  * and energy/priority match, up to the user's focus capacity.
  * 
  * @param {Array} allTasks All active tasks from the bucket
- * @param {Object} preferences User preferences (wakeTime, sleepTime, defaultCapacity, buckets)
+ * @param {Object} preferences User preferences (wakeTime, sleepTime, bufferMinutes, defaultCapacity, buckets)
  * @param {number} capacity Focus capacity in minutes
  * @param {string} energyLevel Current energy level 'low' | 'medium' | 'high'
  * @param {string} [dateStr] Optional date string YYYY-MM-DD, defaults to today
+ * @param {string} [startTimeStr] Optional start time string HH:MM (defaults to real-time aware or wakeTime)
  * @returns {Array} List of planned task objects with scheduled start times
  */
-export function generateDayPlan(allTasks, preferences, capacity, energyLevel, dateStr = today()) {
-  const wakeTime = preferences.wakeTime || '07:00';
-  const sleepTime = preferences.sleepTime || '23:00';
+export function generateDayPlan(allTasks, preferences, capacity, energyLevel, dateStr = today(), startTimeStr = null) {
+  const wakeTime = preferences?.wakeTime || '07:00';
+  const sleepTime = preferences?.sleepTime || '23:00';
+  const bufferMinutes = typeof preferences?.bufferMinutes === 'number' ? preferences.bufferMinutes : 10;
   
+  // Determine effective starting time
+  let effectiveStartTime = startTimeStr;
+  if (!effectiveStartTime) {
+    if (isToday(dateStr)) {
+      const now = new Date();
+      const currentMin = now.getHours() * 60 + now.getMinutes();
+      const [wakeH, wakeM] = wakeTime.split(':').map(Number);
+      const wakeMin = wakeH * 60 + wakeM;
+      if (currentMin > wakeMin) {
+        // Round up to the next 15-minute block
+        const roundedMin = Math.ceil(currentMin / 15) * 15;
+        const h = Math.floor(roundedMin / 60) % 24;
+        const m = roundedMin % 60;
+        effectiveStartTime = formatTime(h, m);
+      } else {
+        effectiveStartTime = wakeTime;
+      }
+    } else {
+      effectiveStartTime = wakeTime;
+    }
+  }
+
   // 1. Filter tasks that are active and due on dateStr
   let candidates = allTasks.filter(task => isTaskDueOn(task, dateStr));
   
@@ -75,14 +99,14 @@ export function generateDayPlan(allTasks, preferences, capacity, energyLevel, da
   }
 
   // 3. Time slot scheduling logic
-  return assignTimeSlots(plannedTasks, wakeTime, sleepTime);
+  return assignTimeSlots(plannedTasks, wakeTime, sleepTime, effectiveStartTime, bufferMinutes);
 }
 
 /**
  * Assigns start times to planned tasks based on their preferred block of day.
- * Splits wake time to sleep time into morning, afternoon, evening windows.
+ * Splits wake time to sleep time into morning, afternoon, evening windows and introduces buffer breaks.
  */
-function assignTimeSlots(plannedTasks, wakeStr, sleepStr) {
+function assignTimeSlots(plannedTasks, wakeStr, sleepStr, startStr = wakeStr, bufferMinutes = 10) {
   // Convert time strings (HH:MM) to minutes since midnight
   const parseTimeToMinutes = (tStr) => {
     const [h, m] = tStr.split(':').map(Number);
@@ -91,16 +115,14 @@ function assignTimeSlots(plannedTasks, wakeStr, sleepStr) {
 
   const wakeMin = parseTimeToMinutes(wakeStr);
   const sleepMin = parseTimeToMinutes(sleepStr);
+  const startMin = parseTimeToMinutes(startStr);
   const activeDayDuration = sleepMin - wakeMin;
 
   // Define block boundary markers
-  // Morning: wakeMin to wakeMin + 1/3 of active day
-  // Afternoon: wakeMin + 1/3 to wakeMin + 2/3
-  // Evening: wakeMin + 2/3 to sleepMin
-  const blockLength = Math.floor(activeDayDuration / 3);
-  const morningStart = wakeMin;
-  const afternoonStart = wakeMin + blockLength;
-  const eveningStart = wakeMin + (blockLength * 2);
+  const blockLength = Math.max(60, Math.floor(activeDayDuration / 3));
+  const morningStart = Math.max(wakeMin, startMin);
+  const afternoonStart = Math.max(wakeMin + blockLength, startMin);
+  const eveningStart = Math.max(wakeMin + (blockLength * 2), startMin);
 
   // Group tasks by preferred block
   const morningQueue = [];
@@ -131,46 +153,45 @@ function assignTimeSlots(plannedTasks, wakeStr, sleepStr) {
   });
 
   const finalSchedule = [];
-
-  // Helper to schedule a queue starting at a specific time
-  let timePointer = morningStart;
+  let timePointer = startMin;
 
   // 1. Schedule Morning
+  timePointer = Math.max(timePointer, morningStart);
   morningQueue.forEach(task => {
-    const startHour = Math.floor(timePointer / 60);
-    const startMin = timePointer % 60;
+    const startHour = Math.floor(timePointer / 60) % 24;
+    const startMinVal = timePointer % 60;
     
     finalSchedule.push({
       ...task,
-      scheduledTime: formatTime(startHour, startMin)
+      scheduledTime: formatTime(startHour, startMinVal)
     });
-    timePointer += task.estimatedMinutes;
+    timePointer += task.estimatedMinutes + bufferMinutes;
   });
 
-  // 2. Schedule Afternoon (starts at afternoonStart or when morning ends, whichever is later)
+  // 2. Schedule Afternoon
   timePointer = Math.max(afternoonStart, timePointer);
   afternoonQueue.forEach(task => {
-    const startHour = Math.floor(timePointer / 60);
-    const startMin = timePointer % 60;
+    const startHour = Math.floor(timePointer / 60) % 24;
+    const startMinVal = timePointer % 60;
     
     finalSchedule.push({
       ...task,
-      scheduledTime: formatTime(startHour, startMin)
+      scheduledTime: formatTime(startHour, startMinVal)
     });
-    timePointer += task.estimatedMinutes;
+    timePointer += task.estimatedMinutes + bufferMinutes;
   });
 
-  // 3. Schedule Evening (starts at eveningStart or when afternoon ends, whichever is later)
+  // 3. Schedule Evening
   timePointer = Math.max(eveningStart, timePointer);
   eveningQueue.forEach(task => {
-    const startHour = Math.floor(timePointer / 60);
-    const startMin = timePointer % 60;
+    const startHour = Math.floor(timePointer / 60) % 24;
+    const startMinVal = timePointer % 60;
     
     finalSchedule.push({
       ...task,
-      scheduledTime: formatTime(startHour, startMin)
+      scheduledTime: formatTime(startHour, startMinVal)
     });
-    timePointer += task.estimatedMinutes;
+    timePointer += task.estimatedMinutes + bufferMinutes;
   });
 
   // Sort the final schedule by time chronologically

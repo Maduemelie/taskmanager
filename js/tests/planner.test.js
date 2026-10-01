@@ -76,15 +76,15 @@ describe('Planner Engine Day Scheduler', () => {
     expect(plan.length).toBe(0);
   });
 
-  it('should sequentially re-assign start times without gaps when tasks are confirmed', () => {
+  it('should sequentially re-assign start times with buffer when tasks are confirmed', () => {
     const selected = [
       { task: { id: 'task-1', estimatedMinutes: 45 } },
       { task: { id: 'task-3', estimatedMinutes: 30 } }
     ];
-    const rescheduled = rescheduleSequentially(selected, '07:00');
+    const rescheduled = rescheduleSequentially(selected, '07:00', 10);
     expect(rescheduled.length).toBe(2);
     expect(rescheduled[0].scheduledTime).toBe('07:00');
-    expect(rescheduled[1].scheduledTime).toBe('07:45');
+    expect(rescheduled[1].scheduledTime).toBe('07:55');
   });
 
   it('should format 24-hour rollover correctly across midnight in sequential rescheduling', () => {
@@ -92,10 +92,25 @@ describe('Planner Engine Day Scheduler', () => {
       { task: { id: 'night-1', estimatedMinutes: 45 } },
       { task: { id: 'night-2', estimatedMinutes: 30 } }
     ];
-    const rescheduled = rescheduleSequentially(selected, '23:30');
+    const rescheduled = rescheduleSequentially(selected, '23:30', 10);
     expect(rescheduled.length).toBe(2);
     expect(rescheduled[0].scheduledTime).toBe('23:30');
-    expect(rescheduled[1].scheduledTime).toBe('00:15');
+    expect(rescheduled[1].scheduledTime).toBe('00:25');
+  });
+
+  it('should schedule from evening start time when planning in the evening (e.g. 19:00 / 7:00 PM)', () => {
+    const plan = generateDayPlan(mockTasks, { ...preferences, bufferMinutes: 10 }, 120, 'medium', '2026-08-20', '19:00');
+    expect(plan.length).toBeGreaterThan(0);
+    const firstTask = plan[0];
+    const [h] = firstTask.scheduledTime.split(':').map(Number);
+    expect(h).toBeGreaterThan(18);
+  });
+
+  it('should space tasks out by buffer duration between tasks', () => {
+    const plan = generateDayPlan(mockTasks, { ...preferences, bufferMinutes: 15 }, 180, 'high', '2026-08-20', '08:00');
+    expect(plan.length).toBe(2);
+    const workout = plan.find(p => p.taskId === 'task-1');
+    expect(workout.scheduledTime).toBe('08:00');
   });
 
 });

@@ -44,7 +44,7 @@ export function daysBetween(dateA, dateB) {
 }
 
 /**
- * Formats hours and minutes into human-readable HH:MM format
+ * Formats hours and minutes into human-readable HH:MM format (24-hour)
  * @param {number} hours 
  * @param {number} minutes 
  * @returns {string} e.g. "09:30"
@@ -53,6 +53,26 @@ export function formatTime(hours, minutes) {
   const hh = String(hours).padStart(2, '0');
   const mm = String(minutes).padStart(2, '0');
   return `${hh}:${mm}`;
+}
+
+/**
+ * Formats a 24-hour time string "HH:MM" or (hours, minutes) into 12-hour AM/PM format
+ * @param {string|number} hoursOrTimeStr 
+ * @param {number} [minutes] 
+ * @returns {string} e.g. "7:00 AM", "7:15 PM"
+ */
+export function formatTime12(hoursOrTimeStr, minutes) {
+  let h, m;
+  if (typeof hoursOrTimeStr === 'string' && hoursOrTimeStr.includes(':')) {
+    [h, m] = hoursOrTimeStr.split(':').map(Number);
+  } else {
+    h = Number(hoursOrTimeStr || 0);
+    m = Number(minutes || 0);
+  }
+  const period = h >= 12 ? 'PM' : 'AM';
+  const displayH = h % 12 === 0 ? 12 : h % 12;
+  const displayM = String(m).padStart(2, '0');
+  return `${displayH}:${displayM} ${period}`;
 }
 
 /**

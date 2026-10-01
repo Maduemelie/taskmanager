@@ -375,6 +375,16 @@
             <input type="time" id="settings-sleep-time" class="input" value="23:00">
           </div>
           <div class="form-group">
+            <label class="form-label" for="settings-buffer-time">Break / Buffer Time Between Tasks</label>
+            <select id="settings-buffer-time" class="select">
+              <option value="0">0 minutes (Back-to-back)</option>
+              <option value="5">5 minutes (Quick breath)</option>
+              <option value="10" selected>10 minutes (Recommended)</option>
+              <option value="15">15 minutes (Relaxed pacing)</option>
+              <option value="20">20 minutes (Extended transition)</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label class="form-label" for="settings-default-capacity">Default Daily Capacity</label>
             <div style="display: flex; align-items: center; gap: var(--spacing-md);">
               <input type="range" id="settings-default-capacity" class="range" min="30" max="480" step="30" value="300">

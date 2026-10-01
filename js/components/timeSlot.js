@@ -1,5 +1,6 @@
 /* js/components/timeSlot.js */
 import { renderTaskCard } from './taskCard.js';
+import { formatTime12 } from '../utils/date.js';
 
 /**
  * Renders a scheduled time slot in today's timeline.
@@ -28,10 +29,16 @@ export function renderTimeSlot(slotEntry, task, callbacks = {}) {
   const endM = totalMin % 60;
   const endTimeStr = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
 
+  const startTime12 = formatTime12(slotEntry.scheduledTime);
+  const endTime12 = formatTime12(endTimeStr);
+
   // Time display
   const timeDisplay = document.createElement('div');
   timeDisplay.className = 'timeline-time';
-  timeDisplay.innerHTML = `<span style="font-weight: 800; display: block;">${slotEntry.scheduledTime}</span><span style="font-size: 0.65rem; color: var(--text-light);">${endTimeStr}</span>`;
+  timeDisplay.innerHTML = `
+    <span class="time-start" style="font-weight: 800; display: block; font-size: 0.78rem; line-height: 1.15; color: var(--text-color);">${startTime12}</span>
+    <span class="time-end" style="font-size: 0.65rem; color: var(--text-muted); font-weight: 600; display: block; margin-top: 2px;">to ${endTime12}</span>
+  `;
   slot.appendChild(timeDisplay);
 
   // Timeline vertical indicator dot

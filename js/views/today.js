@@ -6,7 +6,7 @@ import { renderTimeSlot } from '../components/timeSlot.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { addUnplannedTask, rescheduleRemaining, suggestDeferrals, applyDeferrals } from '../engine/reschedule.js';
-import { today, formatTime } from '../utils/date.js';
+import { today, formatTime, formatTime12 } from '../utils/date.js';
 import { stagger, slideUp, popEffect } from '../utils/animate.js';
 import { triggerHaptic } from '../utils/haptics.js';
 import { showHabitCalendarModal } from '../components/habitCalendar.js';
@@ -79,6 +79,9 @@ export async function renderTodayView() {
     const now = new Date();
     const currentMin = now.getHours() * 60 + now.getMinutes();
 
+    let lastPeriod = null;
+    let lastSlotEndMin = null;
+
     activeSlots.forEach(slot => {
       let taskDetail = taskMap.get(slot.taskId);
       if (!taskDetail) {
@@ -94,6 +97,57 @@ export async function renderTodayView() {
           completionHistory: []
         };
       }
+
+      const [h, m] = slot.scheduledTime.split(':').map(Number);
+      const startMin = h * 60 + m;
+      const endMin = startMin + slot.estimatedMinutes;
+
+      // 1. Time Period Demarcation (Morning, Afternoon, Evening)
+      let period = 'morning';
+      let periodTitle = 'Morning Focus 🌅';
+      if (h >= 12 && h < 17) {
+        period = 'afternoon';
+        periodTitle = 'Afternoon Flow ☀️';
+      } else if (h >= 17 || h < 5) {
+        period = 'evening';
+        periodTitle = 'Evening Wind-down 🌙';
+      }
+
+      if (period !== lastPeriod) {
+        lastPeriod = period;
+        const periodHeader = document.createElement('div');
+        periodHeader.className = `timeline-period-header period-${period}`;
+        periodHeader.innerHTML = `<span>${periodTitle}</span>`;
+        container.appendChild(periodHeader);
+      }
+
+      // 2. Buffer / Rest Gap Demarcation between tasks
+      if (lastSlotEndMin !== null && startMin > lastSlotEndMin) {
+        const gap = startMin - lastSlotEndMin;
+        if (gap >= 5) {
+          const bufferDiv = document.createElement('div');
+          bufferDiv.className = 'timeline-buffer';
+          const gapStartH = Math.floor(lastSlotEndMin / 60) % 24;
+          const gapStartM = lastSlotEndMin % 60;
+          const gapEndH = Math.floor(startMin / 60) % 24;
+          const gapEndM = startMin % 60;
+          const gapTimeStr = `${formatTime12(gapStartH, gapStartM)} – ${formatTime12(gapEndH, gapEndM)}`;
+          
+          bufferDiv.innerHTML = `
+            <div class="timeline-dot buffer-dot"></div>
+            <div class="timeline-buffer-content">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span class="buffer-icon">☕</span>
+                <span class="buffer-label">${gap}m Buffer / Break</span>
+              </div>
+              <span class="buffer-time">${gapTimeStr}</span>
+            </div>
+          `;
+          container.appendChild(bufferDiv);
+        }
+      }
+
+      lastSlotEndMin = endMin;
 
       const callbacks = {
         onStart: async (taskId) => {
@@ -141,9 +195,6 @@ export async function renderTodayView() {
       const slotElement = renderTimeSlot(slot, taskDetail, callbacks);
 
       // Check if this task is currently active based on system time, scheduled start time, and duration
-      const [h, m] = slot.scheduledTime.split(':').map(Number);
-      const startMin = h * 60 + m;
-      const endMin = startMin + slot.estimatedMinutes;
       const isActive = currentMin >= startMin && currentMin < endMin && slot.status !== 'completed' && slot.status !== 'skipped';
 
       if (isActive) {
@@ -156,7 +207,7 @@ export async function renderTodayView() {
     });
 
     // Stagger animate timeline slots
-    const slots = container.querySelectorAll('.timeline-slot');
+    const slots = container.querySelectorAll('.timeline-slot, .timeline-buffer');
     stagger(slots, (el, delay) => slideUp(el, 15, 300, delay));
   }
   const totalTasks = activeSlots.length;
