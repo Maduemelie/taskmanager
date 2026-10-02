@@ -62,7 +62,25 @@ button, input, select, textarea {
   color: inherit;
   background: none;
   border: none;
+}
+
+/* Suppress outline on mouse/pointer clicks, preserve on keyboard navigation */
+:focus:not(:focus-visible) {
   outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Component-specific focus refinements */
+.btn:focus-visible,
+.fab:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 4px var(--primary-light);
 }
 
 button {

@@ -88,10 +88,14 @@ export function renderTaskCard(task, mode, callbacks = {}) {
   title.className = 'task-card-title';
   title.style.margin = '0 0 var(--spacing-xs) 0';
   title.style.fontSize = '1.05rem';
-  title.style.whiteSpace = 'nowrap';
+  title.style.fontWeight = '700';
+  title.style.lineHeight = '1.35';
+  title.style.display = '-webkit-box';
+  title.style.webkitLineClamp = '2';
+  title.style.webkitBoxOrient = 'vertical';
   title.style.overflow = 'hidden';
   title.style.textOverflow = 'ellipsis';
-  title.style.maxWidth = '180px';
+  title.style.wordBreak = 'break-word';
   title.textContent = task.name;
   cardContent.appendChild(title);
 

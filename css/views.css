@@ -165,10 +165,22 @@ section.view.active {
 }
 
 .timeline-period-header::after {
-  content: '';
+  content: none;
+}
+
+.divider-line {
   flex: 1;
   height: 1px;
-  background: linear-gradient(to right, var(--border-color), transparent);
+  background-color: var(--border-light, var(--border-color));
+}
+
+.divider-metrics {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 0.72rem;
+  padding-left: 8px;
+  margin-left: 4px;
+  border-left: 1px solid var(--border-color);
 }
 
 .timeline-slot {
@@ -182,6 +194,15 @@ section.view.active {
   width: 68px;
   text-align: right;
   top: 12px;
+  cursor: pointer;
+  min-height: 44px;
+  padding: 4px 2px;
+  border-radius: var(--radius-sm);
+  transition: background-color var(--transition-fast);
+}
+
+.timeline-time:hover {
+  background-color: var(--primary-light, rgba(212, 93, 37, 0.08));
 }
 
 .timeline-dot {
@@ -222,7 +243,8 @@ section.view.active {
 
 .timeline-buffer .buffer-dot {
   position: absolute;
-  left: -24px;
+  /* Fixed: was -24px (x=70px). -18px aligns dot center at x=76.0px spine */
+  left: -18px;
   top: calc(50% - 4px);
   width: 8px;
   height: 8px;
@@ -285,25 +307,72 @@ section.view.active {
   justify-content: center;
 }
 
-/* Current Active Task Card Highlight (Border-based) */
+/* Current Active Task Card Highlight — Living Terracotta Glow */
 .timeline-slot.is-active-task .timeline-card,
 .timeline-card.is-active-task {
   border: 2px solid var(--primary-color) !important;
   border-left: 5px solid var(--primary-color) !important;
-  box-shadow: 0 0 0 3px rgba(232, 112, 58, 0.25), var(--shadow-md) !important;
-  animation: activeTaskPulse 2s infinite ease-in-out;
+  box-shadow: 0 0 0 4px rgba(212, 93, 37, 0.20), var(--shadow-md) !important;
+  background-color: #FFFFFF;
+  transform: translateY(-1px);
+  animation: activeGlowPulse 3s infinite ease-in-out;
 }
 
-@keyframes activeTaskPulse {
-  0% {
-    box-shadow: 0 0 0 2px rgba(232, 112, 58, 0.4), var(--shadow-sm);
+@keyframes activeGlowPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 3px rgba(212, 93, 37, 0.25), var(--shadow-md);
   }
   50% {
-    box-shadow: 0 0 0 5px rgba(232, 112, 58, 0.15), var(--shadow-md);
+    box-shadow: 0 0 0 6px rgba(212, 93, 37, 0.12), var(--shadow-lg);
   }
-  100% {
-    box-shadow: 0 0 0 2px rgba(232, 112, 58, 0.4), var(--shadow-sm);
-  }
+}
+
+/* Overrun State — Amber warning pulse */
+.timeline-slot.is-overrun .timeline-card,
+.timeline-card.is-overrun {
+  border: 2px solid var(--accent-color) !important;
+  border-left: 5px solid var(--accent-color) !important;
+  box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.25), var(--shadow-md) !important;
+}
+
+/* Completed Task Fade — softly recedes */
+.timeline-slot.completed .timeline-card {
+  opacity: 0.65;
+  filter: saturate(0.7);
+}
+
+/* Now Playing Quick Action Mini-Bar */
+.now-playing-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-sm);
+  border-top: 1px dashed var(--border-light, var(--border-color));
+}
+
+.now-playing-btn {
+  flex: 1;
+  padding: 6px 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-color, #f8f9fa);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 36px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.now-playing-btn:hover {
+  background-color: var(--primary-light, rgba(212, 93, 37, 0.08));
+  border-color: var(--primary-color);
+  color: var(--primary-color);
 }
 
 /* --- Bucket Grid View --- */

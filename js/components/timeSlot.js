@@ -32,15 +32,16 @@ export function renderTimeSlot(slotEntry, task, callbacks = {}) {
   const startTime12 = formatTime12(slotEntry.scheduledTime);
   const endTime12 = formatTime12(endTimeStr);
 
-  // Time display
-  const timeDisplay = document.createElement('div');
-  timeDisplay.className = 'timeline-time';
-  timeDisplay.style.cursor = 'pointer';
+  // Time display — upgraded to accessible 44x44px touch target
+  const timeDisplay = document.createElement('button');
+  timeDisplay.type = 'button';
+  timeDisplay.className = 'timeline-time time-slot-time-trigger';
   timeDisplay.title = 'Tap to adjust start time or duration';
+  timeDisplay.setAttribute('aria-label', `Edit time for ${task.name}. Scheduled from ${startTime12} to ${endTime12}`);
   timeDisplay.innerHTML = `
     <span class="time-start" style="font-weight: 800; display: block; font-size: 0.78rem; line-height: 1.15; color: var(--text-color);">${startTime12}</span>
     <span class="time-end" style="font-size: 0.65rem; color: var(--text-muted); font-weight: 600; display: block; margin-top: 2px;">to ${endTime12}</span>
-    <span style="font-size: 0.65rem; color: var(--primary-color); display: block; margin-top: 2px; font-weight: 700;">✏️ edit</span>
+    <span class="time-edit-hint" style="font-size: 0.65rem; color: var(--primary-color); display: block; margin-top: 2px; font-weight: 700;">✏️ edit</span>
   `;
   timeDisplay.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -95,34 +96,43 @@ export function renderTimeSlot(slotEntry, task, callbacks = {}) {
   const card = cardContainer.querySelector('.card');
   card.classList.add('timeline-card');
 
-  // Add extra status decorations to the card
+  // Add flexbox header row with status and badges instead of float:right
   const headerContainer = card.querySelector('.timeline-card-content');
-  
-  // Status indicator chip
-  const statusChip = document.createElement('span');
-  statusChip.className = `chip status-chip-${slotEntry.status}`;
-  statusChip.style.float = 'right';
-  statusChip.style.fontSize = '0.7rem';
-  statusChip.style.padding = '1px 6px';
-  statusChip.style.marginLeft = 'var(--spacing-sm)';
-  statusChip.style.backgroundColor = getStatusColor(slotEntry.status);
-  statusChip.style.color = '#FFF';
-  statusChip.textContent = `${statusEmoji} ${statusLabel}`;
-  headerContainer.prepend(statusChip);
 
-  // If unplanned interruption, add badge
+  // Create a flex header wrapper for title + status badges
+  const cardHeaderFlex = document.createElement('div');
+  cardHeaderFlex.className = 'card-header-flex';
+  cardHeaderFlex.style.cssText = 'display:flex; align-items:flex-start; justify-content:space-between; gap:8px;';
+
+  // Move the title into the flex header
+  const titleEl = headerContainer.querySelector('.task-card-title');
+  if (titleEl) {
+    cardHeaderFlex.appendChild(titleEl);
+  }
+
+  // Badge container
+  const badgeContainer = document.createElement('div');
+  badgeContainer.className = 'card-header-badges';
+  badgeContainer.style.cssText = 'display:flex; gap:4px; flex-shrink:0; align-items:center;';
+
+  // Unplanned badge
   if (slotEntry.isUnplanned) {
     const waveBadge = document.createElement('span');
-    waveBadge.className = 'chip';
-    waveBadge.style.float = 'right';
-    waveBadge.style.fontSize = '0.7rem';
-    waveBadge.style.padding = '1px 6px';
-    waveBadge.style.backgroundColor = 'var(--primary-light)';
-    waveBadge.style.color = 'var(--primary-color)';
-    waveBadge.style.border = '1px solid var(--primary-color)';
-    waveBadge.textContent = '🌊 Interruption';
-    headerContainer.prepend(waveBadge);
+    waveBadge.className = 'chip chip-unplanned';
+    waveBadge.style.cssText = 'font-size:0.7rem; padding:1px 6px; background-color:var(--primary-light); color:var(--primary-color); border:1px solid var(--primary-color);';
+    waveBadge.textContent = '⚡ Unplanned';
+    badgeContainer.appendChild(waveBadge);
   }
+
+  // Status chip
+  const statusChip = document.createElement('span');
+  statusChip.className = `chip status-chip-${slotEntry.status}`;
+  statusChip.style.cssText = `font-size:0.7rem; padding:1px 6px; background-color:${getStatusColor(slotEntry.status)}; color:#FFF;`;
+  statusChip.textContent = `${statusEmoji} ${statusLabel}`;
+  badgeContainer.appendChild(statusChip);
+
+  cardHeaderFlex.appendChild(badgeContainer);
+  headerContainer.prepend(cardHeaderFlex);
 
   // Add progress bar underneath card contents if "in-progress"
   if (slotEntry.status === 'in-progress') {
