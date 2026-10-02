@@ -55,7 +55,6 @@ def create_context_analyst_task(
         description=description.strip(),
         expected_output=expected_output.strip(),
         agent=agent,
-        output_pydantic=DevelopmentSessionReport,
     )
 
 
@@ -73,7 +72,7 @@ def create_technical_writer_task(
         else "None (empty commit)"
     )
 
-    description = f"""Author a comprehensive, publication-ready technical Markdown article based on the DevelopmentSessionReport and the Git commit context.
+    description = f"""Author a high-quality, deeply technical engineering blog post based on the DevelopmentSessionReport and the Git commit context.
 
 ### Commit Metadata:
 - Commit SHA: {git_context.sha}
@@ -82,6 +81,12 @@ def create_technical_writer_task(
 - Date: {git_context.date}
 - Subject: {git_context.message_subject}
 - Files Changed: {changed_files_summary}
+
+### Persona & Tone Rules:
+- Write from the perspective of a Senior Software Engineer sharing technical insights with their team or dev community.
+- Tell a narrative story: Focus on *why* this change was necessary, the pain points of the legacy implementation, and *how* the new architecture solves it.
+- **CRITICAL:** DO NOT use robotic boilerplate phrases like "Automated development session analysis", "Modifications across X files", or "Verified atomic writing".
+- NEVER just regurgitate the commit metadata or file additions/deletions. Instead, explain the actual code changes and the engineering trade-offs behind them.
 
 ### Required Structure & Guidelines:
 1. YAML Frontmatter:
@@ -96,13 +101,13 @@ def create_technical_writer_task(
    ```
 2. Top-level H1 heading: `# <suggested_article_title>` (or `# {git_context.message_subject}`).
 3. Mandatory Sections (Must include these exact headings):
-   - `## Executive Summary` (High-level overview describing what changed, motivation, and system impact)
-   - `## Architectural Breakdown` (Detailed analysis of component interactions, architectural shifts, and design trade-offs)
-   - `## Changes Overview` (Granular breakdown of modified files, classes, algorithms, and key code additions)
-   - `## Key Technical Takeaways` (Bulleted list of key engineering lessons, patterns, and principles learned)
+   - `## Executive Summary` (A compelling narrative hook explaining the business or technical motivation for this work. Frame the problem before introducing the solution.)
+   - `## Architectural Breakdown` (Deep dive into the architectural shifts, component lifecycle changes, UI/UX rationale, or data flow improvements.)
+   - `## Implementation Details` (Highlight specific, interesting parts of the code changes. Mention the shift from bad patterns (e.g., float: right) to modern patterns (e.g., flexbox), or state management changes like Optimistic UI.)
+   - `## Key Technical Takeaways` (A bulleted list of profound engineering lessons learned, not just statistics about the commit.)
 4. Footer citation: `_Commit {git_context.sha} by {git_context.author_name} on {git_context.date}_`.
 
-Ensure the article is technically rigorous, contains well-fenced code blocks where applicable, exceeds 50 characters, and contains zero hallucinations.
+Ensure the article is technically rigorous, exceeds 500 words, and contains zero hallucinations.
 Do NOT use asterisks (*) for text formatting like bold (**text**) or italics (*text*). Use plain text instead.
 """
     expected_output = (
