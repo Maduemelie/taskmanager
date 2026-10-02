@@ -35,10 +35,17 @@ export function renderTimeSlot(slotEntry, task, callbacks = {}) {
   // Time display
   const timeDisplay = document.createElement('div');
   timeDisplay.className = 'timeline-time';
+  timeDisplay.style.cursor = 'pointer';
+  timeDisplay.title = 'Tap to adjust start time or duration';
   timeDisplay.innerHTML = `
     <span class="time-start" style="font-weight: 800; display: block; font-size: 0.78rem; line-height: 1.15; color: var(--text-color);">${startTime12}</span>
     <span class="time-end" style="font-size: 0.65rem; color: var(--text-muted); font-weight: 600; display: block; margin-top: 2px;">to ${endTime12}</span>
+    <span style="font-size: 0.65rem; color: var(--primary-color); display: block; margin-top: 2px; font-weight: 700;">✏️ edit</span>
   `;
+  timeDisplay.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (callbacks.onEditTime) callbacks.onEditTime(slotEntry.taskId);
+  });
   slot.appendChild(timeDisplay);
 
   // Timeline vertical indicator dot

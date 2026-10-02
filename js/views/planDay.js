@@ -153,12 +153,15 @@ export function initPlanDayView() {
         return;
       }
 
-      // Re-assign times sequentially to the finalized checked list
-      const prefs = await getPreferences();
-      const wakeTime = prefs.wakeTime || '07:00';
-      const effectiveStartTime = getEffectiveStartTime(wakeTime);
-      const bufferMinutes = typeof prefs.bufferMinutes === 'number' ? prefs.bufferMinutes : 10;
-      const plannedTasksInput = rescheduleSequentially(selectedTasks, effectiveStartTime, bufferMinutes);
+      // Sort selected tasks chronologically by the user-picked or adjusted scheduled times
+      selectedTasks.sort((a, b) => a.scheduledTime.localeCompare(b.scheduledTime));
+
+      const plannedTasksInput = selectedTasks.map(item => ({
+        taskId: item.task.id || item.taskId,
+        estimatedMinutes: item.task.estimatedMinutes,
+        scheduledTime: item.scheduledTime,
+        isUnplanned: false
+      }));
 
       await createPlan(today(), initialCapacity, plannedTasksInput);
       showToast('Daily plan created! Let\'s focus ✨', 'success');
@@ -253,12 +256,15 @@ function updateCapacityLabel(minutes, displayEl) {
   displayEl.textContent = `${hours}h ${mins}m`;
 }
 
-function renderSuggestionsList() {
+async function renderSuggestionsList() {
   const container = document.getElementById('suggestions-list-container');
   const capacitySummary = document.getElementById('suggestions-capacity-summary');
   if (!container) return;
 
   container.innerHTML = '';
+
+  const prefs = await getPreferences();
+  const bucketMap = new Map((prefs.buckets || []).map(b => [b.id, b]));
 
   let totalScheduledMin = 0;
   
@@ -267,15 +273,12 @@ function renderSuggestionsList() {
       totalScheduledMin += item.task.estimatedMinutes;
     }
 
-    const row = document.createElement('div');
-    row.className = 'suggestion-card';
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.gap = 'var(--spacing-md)';
-    row.style.width = '100%';
-    row.style.marginBottom = 'var(--spacing-sm)';
+    const bucket = bucketMap.get(item.task.bucket) || { name: item.task.bucket || 'General', emoji: '📌', color: '#8E8E8E' };
 
-    // Checkbox custom
+    const row = document.createElement('div');
+    row.className = `suggestion-card card ${!item.isChecked ? 'suggestion-unchecked' : ''}`;
+
+    // 1. Checkbox wrapper
     const checkboxWrapper = document.createElement('div');
     checkboxWrapper.className = 'suggestion-checkbox-container';
     
@@ -283,10 +286,11 @@ function renderSuggestionsList() {
     checkbox.className = `custom-checkbox ${item.isChecked ? 'checked' : ''}`;
     checkbox.innerHTML = item.isChecked ? '✓' : '';
     
-    checkbox.addEventListener('click', () => {
+    const toggleChecked = () => {
       item.isChecked = !item.isChecked;
       checkbox.classList.toggle('checked', item.isChecked);
       checkbox.innerHTML = item.isChecked ? '✓' : '';
+      row.classList.toggle('suggestion-unchecked', !item.isChecked);
       
       // Update capacity total label
       let currentTotal = 0;
@@ -296,29 +300,108 @@ function renderSuggestionsList() {
       if (capacitySummary) {
         capacitySummary.textContent = `${currentTotal}m / ${initialCapacity}m`;
       }
-    });
+    };
 
+    checkbox.addEventListener('click', toggleChecked);
     checkboxWrapper.appendChild(checkbox);
     row.appendChild(checkboxWrapper);
 
-    // Simple display card details
-    const card = document.createElement('div');
-    card.className = 'card';
-    card.style.flex = '1';
-    card.style.display = 'flex';
-    card.style.justifyContent = 'space-between';
-    card.style.alignItems = 'center';
-    card.style.padding = 'var(--spacing-md)';
+    // 2. Main content container
+    const mainContent = document.createElement('div');
+    mainContent.className = 'suggestion-main';
 
-    const details = document.createElement('div');
-    details.innerHTML = `<span style="font-size:0.75rem; color:var(--text-light); font-weight:800; display:block;">[${formatTime12(item.scheduledTime)}]</span><span style="font-weight:700;">${item.task.name}</span>`;
+    // Header: Task Title & Bucket Chip
+    const header = document.createElement('div');
+    header.className = 'suggestion-header';
+    header.innerHTML = `
+      <span class="suggestion-title">${item.task.name}</span>
+      <span class="chip suggestion-bucket-chip" style="background-color: ${bucket.color}15; color: ${bucket.color}; border-color: ${bucket.color}40; font-size: 0.75rem; padding: 2px 8px;">
+        ${bucket.emoji} ${bucket.name}
+      </span>
+    `;
+    mainContent.appendChild(header);
 
-    const meta = document.createElement('div');
-    meta.innerHTML = `<span class="chip" style="font-size:0.75rem;">⏱️ ${item.task.estimatedMinutes}m</span>`;
+    // Time & Duration Custom Inputs Row
+    const timeRow = document.createElement('div');
+    timeRow.className = 'suggestion-time-row';
 
-    card.appendChild(details);
-    card.appendChild(meta);
-    row.appendChild(card);
+    // Start Time Group
+    const timeGroup = document.createElement('div');
+    timeGroup.className = 'suggestion-time-group';
+    
+    const timeLabel = document.createElement('label');
+    timeLabel.className = 'suggestion-field-label';
+    timeLabel.textContent = '🕒 Start Time:';
+    
+    const timeInput = document.createElement('input');
+    timeInput.type = 'time';
+    timeInput.className = 'input suggestion-time-input';
+    timeInput.value = item.scheduledTime;
+
+    const timeBadge = document.createElement('span');
+    timeBadge.className = 'suggestion-time-12h';
+    timeBadge.textContent = formatTime12(item.scheduledTime);
+
+    timeInput.addEventListener('input', (e) => {
+      const val = e.target.value;
+      if (val) {
+        item.scheduledTime = val;
+        item.isCustomTime = true;
+        timeBadge.textContent = formatTime12(val);
+      }
+    });
+
+    timeGroup.appendChild(timeLabel);
+    timeGroup.appendChild(timeInput);
+    timeGroup.appendChild(timeBadge);
+    timeRow.appendChild(timeGroup);
+
+    // Duration Group
+    const durationGroup = document.createElement('div');
+    durationGroup.className = 'suggestion-duration-group';
+
+    const durLabel = document.createElement('label');
+    durLabel.className = 'suggestion-field-label';
+    durLabel.textContent = '⏱️ Duration:';
+
+    const durBox = document.createElement('div');
+    durBox.className = 'suggestion-duration-box';
+
+    const durInput = document.createElement('input');
+    durInput.type = 'number';
+    durInput.className = 'input suggestion-duration-input';
+    durInput.min = '5';
+    durInput.max = '480';
+    durInput.step = '5';
+    durInput.value = item.task.estimatedMinutes;
+
+    const durUnit = document.createElement('span');
+    durUnit.className = 'duration-unit';
+    durUnit.textContent = 'min';
+
+    durInput.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10);
+      if (val && val > 0) {
+        item.task.estimatedMinutes = val;
+        
+        let currentTotal = 0;
+        generatedSuggestions.forEach(g => {
+          if (g.isChecked) currentTotal += g.task.estimatedMinutes;
+        });
+        if (capacitySummary) {
+          capacitySummary.textContent = `${currentTotal}m / ${initialCapacity}m`;
+        }
+      }
+    });
+
+    durBox.appendChild(durInput);
+    durBox.appendChild(durUnit);
+    durationGroup.appendChild(durLabel);
+    durationGroup.appendChild(durBox);
+    timeRow.appendChild(durationGroup);
+
+    mainContent.appendChild(timeRow);
+    row.appendChild(mainContent);
 
     container.appendChild(row);
   });
@@ -342,6 +425,8 @@ async function showAddMoreModal() {
   content.style.gap = 'var(--spacing-md)';
 
   const activeTasks = await getActiveTasks();
+  const prefs = await getPreferences();
+  const bufferMinutes = typeof prefs.bufferMinutes === 'number' ? prefs.bufferMinutes : 10;
   
   // Filter out tasks already in the suggestion list
   const suggestedIds = new Set(generatedSuggestions.map(g => g.task.id));
@@ -371,13 +456,14 @@ async function showAddMoreModal() {
     `;
 
     item.addEventListener('click', () => {
-      // Append to suggestions. We'll set start time to end of current suggestions or wake time.
+      // Append to suggestions. We'll set start time to end of current suggestions + buffer
       const lastSuggestion = generatedSuggestions[generatedSuggestions.length - 1];
-      let scheduledTime = '09:00';
+      let scheduledTime = getEffectiveStartTime(prefs.wakeTime || '07:00');
+      
       if (lastSuggestion) {
         const [h, m] = lastSuggestion.scheduledTime.split(':').map(Number);
-        const nextMin = h * 60 + m + lastSuggestion.task.estimatedMinutes;
-        scheduledTime = `${String(Math.floor(nextMin / 60) % 24).padStart(2, '0')}:${String(nextMin % 60).padStart(2, '0')}`;
+        const nextMin = h * 60 + m + lastSuggestion.task.estimatedMinutes + bufferMinutes;
+        scheduledTime = formatTime(Math.floor(nextMin / 60) % 24, nextMin % 60);
       }
 
       generatedSuggestions.push({

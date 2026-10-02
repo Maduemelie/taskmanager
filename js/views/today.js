@@ -189,6 +189,9 @@ export async function renderTodayView() {
             return;
           }
           window.location.hash = `#add-task?id=${taskId}`;
+        },
+        onEditTime: (taskId) => {
+          showEditTimeModal(slot, taskDetail);
         }
       };
 
@@ -315,6 +318,79 @@ function showCompletionMinutesModal(taskId, estimatedMinutes) {
 
     await markTaskStatus(activePlan.id, taskId, 'completed', actualMinutes);
     showToast('Task completed! Streak updated 🎉', 'success');
+    renderTodayView();
+  });
+}
+
+/**
+ * Modal to adjust scheduled start time and duration directly from today's timeline.
+ */
+async function showEditTimeModal(slot, taskDetail) {
+  const content = document.createElement('div');
+  content.innerHTML = `
+    <div style="margin-bottom: var(--spacing-md);">
+      <h4 style="margin-bottom: 4px; font-weight: 800; font-size: 1.05rem;">${taskDetail.name}</h4>
+      <p style="font-size: 0.85rem; color: var(--text-muted);">Adjust start time or duration for today's schedule.</p>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="edit-slot-time">Start Time</label>
+      <input type="time" id="edit-slot-time" class="input" value="${slot.scheduledTime}" required style="font-size: 1.1rem; padding: var(--spacing-sm) var(--spacing-md); font-weight: 700;">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="edit-slot-duration">Duration (minutes)</label>
+      <input type="number" id="edit-slot-duration" class="input" min="5" max="480" step="5" value="${slot.estimatedMinutes}" required style="font-size: 1rem; padding: var(--spacing-sm) var(--spacing-md); font-weight: 700;">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+        <input type="checkbox" id="edit-slot-shift-subsequent" checked style="width: 18px; height: 18px;">
+        <span style="font-size: 0.9rem; font-weight: 600;">Shift subsequent tasks forward if time moved back</span>
+      </label>
+    </div>
+
+    <div style="display: flex; gap: var(--spacing-md); margin-top: var(--spacing-xl);">
+      <button id="edit-slot-cancel-btn" class="btn btn-secondary" style="flex: 1;">Cancel</button>
+      <button id="edit-slot-save-btn" class="btn btn-primary" style="flex: 1;">Save Changes</button>
+    </div>
+  `;
+
+  openModal('Adjust Timing ⏰', content);
+
+  document.getElementById('edit-slot-cancel-btn').addEventListener('click', closeModal);
+  document.getElementById('edit-slot-save-btn').addEventListener('click', async () => {
+    const newTime = document.getElementById('edit-slot-time').value;
+    const newDur = parseInt(document.getElementById('edit-slot-duration').value, 10) || slot.estimatedMinutes;
+    const shiftOthers = document.getElementById('edit-slot-shift-subsequent').checked;
+
+    if (!newTime) {
+      showToast('Please select a valid time', 'warning');
+      return;
+    }
+
+    const oldTime = slot.scheduledTime;
+    slot.scheduledTime = newTime;
+    slot.estimatedMinutes = newDur;
+
+    if (shiftOthers) {
+      const [oldH, oldM] = oldTime.split(':').map(Number);
+      const [newH, newM] = newTime.split(':').map(Number);
+      const oldMinVal = oldH * 60 + oldM;
+      const newMinVal = newH * 60 + newM;
+      const shift = newMinVal - oldMinVal;
+
+      if (shift > 0) {
+        activePlan = rescheduleRemaining(activePlan, oldTime, shift, slot.taskId);
+      }
+    }
+
+    // Sort chronologically
+    activePlan.plannedTasks.sort((a, b) => a.scheduledTime.localeCompare(b.scheduledTime));
+    await updatePlan(activePlan.id, { plannedTasks: activePlan.plannedTasks });
+
+    closeModal();
+    showToast('Task timing updated ⏱️', 'success');
     renderTodayView();
   });
 }

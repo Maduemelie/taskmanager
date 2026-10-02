@@ -453,20 +453,142 @@ section.view.active {
 .plan-suggestions-list {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-md);
   margin-bottom: var(--spacing-xl);
 }
 
 .suggestion-card {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background-color: var(--surface-color);
+  box-shadow: var(--shadow-sm);
+  transition: opacity var(--transition-fast), transform var(--transition-fast), border-color var(--transition-fast);
+}
+
+.suggestion-card.suggestion-unchecked {
+  opacity: 0.55;
+  background-color: var(--bg-color);
+  border-style: dashed;
 }
 
 .suggestion-checkbox-container {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding-top: 4px;
+}
+
+.suggestion-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.suggestion-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.suggestion-title {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--text-color);
+}
+
+.suggestion-time-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-light);
+}
+
+.suggestion-time-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.suggestion-field-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.suggestion-time-input {
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  width: auto;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border-color);
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  cursor: pointer;
+}
+
+.suggestion-time-input:focus {
+  border-color: var(--primary-color);
+  outline: none;
+}
+
+.suggestion-time-12h {
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: var(--primary-color);
+  background-color: var(--primary-light);
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+}
+
+.suggestion-duration-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.suggestion-duration-box {
+  display: flex;
+  align-items: center;
+  background-color: var(--bg-color);
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding-right: 6px;
+}
+
+.suggestion-duration-input {
+  width: 50px;
+  padding: 4px 4px 4px 8px;
+  border: none;
+  background: transparent;
+  font-weight: 700;
+  font-size: 0.85rem;
+  text-align: center;
+  color: var(--text-color);
+}
+
+.suggestion-duration-input:focus {
+  outline: none;
+}
+
+.duration-unit {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
 }
 
 /* Custom checkbox */
@@ -480,6 +602,7 @@ section.view.active {
   justify-content: center;
   cursor: pointer;
   transition: all var(--transition-fast);
+  font-weight: 800;
 }
 
 .custom-checkbox.checked {
