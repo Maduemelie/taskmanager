@@ -829,7 +829,7 @@ async function showInterruptionModal() {
 
     const now = new Date();
     const insertTime = formatTime(now.getHours(), now.getMinutes());
-    const tempTaskId = \`task_temp_\${Date.now()}\`;
+    const tempTaskId = `task_temp_${Date.now()}`;
 
     // 1. Instant Modal Dismissal
     closeModal();
@@ -1007,16 +1007,16 @@ function showSlippageBanner(minutes) {
     }
   }
 
-  banner.innerHTML = \`
+  banner.innerHTML = `
     <div style="display:flex; align-items:center; gap:8px;">
       <span>⚡</span>
-      <span style="font-size:0.85rem; font-weight:500;">Behind schedule by <strong>\${minutes}m</strong></span>
+      <span style="font-size:0.85rem; font-weight:500;">Behind schedule by <strong>${minutes}m</strong></span>
     </div>
     <div style="display:flex; gap:8px;">
       <button id="banner-realign-btn" class="btn btn-sm" style="background:rgba(255,255,255,0.2); color:#fff; border:none; padding:4px 8px; font-size:0.75rem; border-radius:var(--radius-sm); cursor:pointer;">Auto-Align</button>
       <button id="banner-dismiss-btn" class="btn btn-sm btn-ghost" style="color:#fff; padding:4px; margin-left:4px; border:none; background:transparent; cursor:pointer;" aria-label="Dismiss">✕</button>
     </div>
-  \`;
+  `;
 
   document.getElementById('banner-realign-btn').addEventListener('click', async () => {
     await autoCascadeSchedule();
