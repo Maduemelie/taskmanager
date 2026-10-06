@@ -17,6 +17,8 @@ import { checkOnboarding } from './components/onboarding.js';
 
 import { parseNaturalLanguageTask, quickCaptureTask } from './engine/quickCapture.js';
 import { transitionTaskStatus, normalizeTask } from './models/task.js';
+import { candidateScore, rankCandidateTasks, calculateCandidateScore } from './engine/scoring.js';
+import { generateDeterministicSchedule, scheduleDay, validateSchedule } from './engine/deterministicScheduler.js';
 
 const bootDate = today();
 
@@ -34,6 +36,15 @@ window.PlanFlow = {
   taskModel: {
     normalize: normalizeTask,
     transition: transitionTaskStatus
+  },
+  scheduler: {
+    candidateScore,
+    calculateCandidateScore,
+    rankCandidates: rankCandidateTasks,
+    rankCandidateTasks,
+    generateDeterministicSchedule,
+    scheduleDay,
+    validateSchedule
   }
 };
 

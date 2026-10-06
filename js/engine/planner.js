@@ -3,6 +3,9 @@ import { scoreTask } from './scoring.js';
 import { isTaskDueOn } from './recurrence.js';
 import { today, formatTime, isToday } from '../utils/date.js';
 
+export { generateDeterministicSchedule, scheduleDay, validateSchedule, parseTimeToMinutes, formatMinutesToTime, createScheduleGaps } from './deterministicScheduler.js';
+export { candidateScore, calculateCandidateScore, rankCandidateTasks } from './scoring.js';
+
 /**
  * Generates today's suggested plan from the available active tasks.
  * Uses a greedy selection algorithm with dynamic re-scoring to optimize bucket diversity

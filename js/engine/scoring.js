@@ -1,6 +1,6 @@
 /* js/engine/scoring.js */
 import { isTaskDueOn, getNextDueDate } from './recurrence.js';
-import { daysBetween } from '../utils/date.js';
+import { daysBetween, today } from '../utils/date.js';
 
 /**
  * Scores a task to determine its priority/suitability for today's plan.
@@ -99,4 +99,239 @@ export function scoreTask(task, context) {
   score -= sameBucketCount * 20;
 
   return score;
+}
+
+/**
+ * Canonical Candidate Task Scoring (Section 8.3)
+ * Evaluates and scores an eligible task for placement in the daily schedule.
+ *
+ * Baseline formula components:
+ * 0.30 priority
+ * + 0.20 urgency
+ * + 0.15 energy fit
+ * + 0.10 deadline fit (deadline pressure)
+ * + 0.10 context continuity
+ * + 0.05 preference fit
+ * + 0.10 completion probability
+ *
+ * @param {Object} task The candidate task object
+ * @param {Object} [context] Scheduling context:
+ *   - date {string} YYYY-MM-DD (defaults to today)
+ *   - energyWindow {string} 'low' | 'medium' | 'high'
+ *   - previousTask {Object} The previously placed task in the schedule
+ *   - slotTime {string} 'HH:MM' (start time of current placement window)
+ *   - preferences {Object} User preferences
+ * @returns {number} Normalized composite score in range [0, 100]
+ */
+export function candidateScore(task, context = {}) {
+  const result = calculateCandidateScore(task, context);
+  return result.score;
+}
+
+/**
+ * Detailed candidate score calculation returning composite score and component breakdown.
+ * @param {Object} task 
+ * @param {Object} [context] 
+ * @returns {{ score: number, normalizedScore: number, breakdown: Object }}
+ */
+export function calculateCandidateScore(task, context = {}) {
+  if (!task) {
+    return { score: 0, normalizedScore: 0, breakdown: {} };
+  }
+
+  const date = context.date || today();
+  const energyWindow = (context.energyWindow || context.energyLevel || 'medium').toLowerCase();
+  const previousTask = context.previousTask || null;
+  const preferences = context.preferences || {};
+  const slotTime = context.slotTime || null;
+
+  // 1. Priority (weight: 0.30)
+  // Support canonical 0-100 scale; legacy 1-5 scale is normalized to 0-100
+  let rawPriority = typeof task.priority === 'number' ? task.priority : 50;
+  let priorityScore = rawPriority;
+  if (rawPriority <= 5 && rawPriority >= 0) {
+    priorityScore = (rawPriority / 5) * 100;
+  }
+  priorityScore = Math.max(0, Math.min(100, priorityScore));
+
+  // 2. Urgency (weight: 0.20)
+  // Canonical range 0-100. If omitted, default to 50 or infer from deadline
+  let urgencyScore = 50;
+  if (typeof task.urgency === 'number') {
+    urgencyScore = task.urgency <= 5 && task.urgency >= 0 ? (task.urgency / 5) * 100 : task.urgency;
+  } else if (task.deadline) {
+    const deadlineDateStr = task.deadline.split('T')[0];
+    if (deadlineDateStr < date) {
+      urgencyScore = 100; // Past due
+    } else {
+      const daysToDeadline = daysBetween(date, deadlineDateStr);
+      if (daysToDeadline === 0) urgencyScore = 95;
+      else if (daysToDeadline <= 1) urgencyScore = 85;
+      else if (daysToDeadline <= 3) urgencyScore = 70;
+      else if (daysToDeadline <= 7) urgencyScore = 45;
+      else urgencyScore = 20;
+    }
+  }
+  urgencyScore = Math.max(0, Math.min(100, urgencyScore));
+
+  // 3. Energy Fit (weight: 0.15)
+  // Matches task energy level against the context energy window
+  const energyLevels = { low: 1, medium: 2, high: 3 };
+  const taskEnergy = (task.energy || task.energyLevel || 'medium').toLowerCase();
+  const taskLevel = energyLevels[taskEnergy] || 2;
+  const windowLevel = energyLevels[energyWindow] || 2;
+  const energyDiff = Math.abs(taskLevel - windowLevel);
+  let energyScore = 100;
+  if (energyDiff === 1) energyScore = 50;
+  else if (energyDiff >= 2) energyScore = 0;
+
+  // 4. Deadline Fit / Deadline Pressure (weight: 0.10)
+  let deadlineScore = 0;
+  if (task.deadline) {
+    const deadlineDateStr = task.deadline.split('T')[0];
+    if (deadlineDateStr < date) {
+      deadlineScore = 100; // Overdue
+    } else if (deadlineDateStr === date) {
+      // Due today
+      if (task.deadline.includes('T') || task.deadline.includes(':')) {
+        const timePart = task.deadline.includes('T') ? task.deadline.split('T')[1].substring(0, 5) : task.deadline;
+        if (slotTime) {
+          const [sH, sM] = slotTime.split(':').map(Number);
+          const [dH, dM] = timePart.split(':').map(Number);
+          const diffMin = (dH * 60 + dM) - (sH * 60 + sM);
+          if (diffMin <= 0) deadlineScore = 100;
+          else if (diffMin <= 120) deadlineScore = 95;
+          else if (diffMin <= 240) deadlineScore = 85;
+          else deadlineScore = 75;
+        } else {
+          deadlineScore = 90;
+        }
+      } else {
+        deadlineScore = 85;
+      }
+    } else {
+      const days = daysBetween(date, deadlineDateStr);
+      if (days === 1) deadlineScore = 70;
+      else if (days <= 3) deadlineScore = 50;
+      else if (days <= 7) deadlineScore = 25;
+      else deadlineScore = 10;
+    }
+  }
+
+  // 5. Context Continuity (weight: 0.10)
+  // Reduces cognitive switching friction by favoring same category or energy continuation
+  let continuityScore = 50; // Neutral baseline when no prior task in sequence
+  if (previousTask) {
+    const prevCategory = previousTask.categoryId || previousTask.bucket;
+    const taskCategory = task.categoryId || task.bucket;
+    if (prevCategory && taskCategory && prevCategory === taskCategory) {
+      continuityScore = 100;
+    } else if ((previousTask.energy || previousTask.energyLevel) === taskEnergy) {
+      continuityScore = 60;
+    } else {
+      continuityScore = 10;
+    }
+  }
+
+  // 6. User Preference Fit (weight: 0.05)
+  // Preferred time of day alignment and category preference
+  let preferenceScore = 70;
+  const preferredTime = task.preferredTime || 'anytime';
+  if (slotTime) {
+    const [h] = slotTime.split(':').map(Number);
+    const slotPeriod = h < 12 ? 'morning' : (h < 17 ? 'afternoon' : 'evening');
+    if (preferredTime === 'anytime' || preferredTime === slotPeriod) {
+      preferenceScore = 100;
+    } else {
+      preferenceScore = 30;
+    }
+  } else if (preferredTime === 'anytime') {
+    preferenceScore = 100;
+  }
+
+  // 7. Completion Probability (weight: 0.10)
+  let probabilityScore = 75;
+  if (typeof task.completionProbability === 'number') {
+    probabilityScore = task.completionProbability <= 1 ? task.completionProbability * 100 : task.completionProbability;
+  } else if (typeof task.currentStreak === 'number' && task.currentStreak > 0) {
+    probabilityScore = Math.min(100, 70 + task.currentStreak * 6);
+  } else if (Array.isArray(task.completionHistory) && task.completionHistory.length > 0) {
+    probabilityScore = 85;
+  }
+  probabilityScore = Math.max(0, Math.min(100, probabilityScore));
+
+  // Composite calculation
+  const weightedSum = (
+    0.30 * priorityScore +
+    0.20 * urgencyScore +
+    0.15 * energyScore +
+    0.10 * deadlineScore +
+    0.10 * continuityScore +
+    0.05 * preferenceScore +
+    0.10 * probabilityScore
+  );
+
+  const finalScore = Number(weightedSum.toFixed(2));
+
+  return {
+    score: finalScore,
+    normalizedScore: Number((finalScore / 100).toFixed(4)),
+    breakdown: {
+      priority: Number((0.30 * priorityScore).toFixed(2)),
+      urgency: Number((0.20 * urgencyScore).toFixed(2)),
+      energyFit: Number((0.15 * energyScore).toFixed(2)),
+      deadlineFit: Number((0.10 * deadlineScore).toFixed(2)),
+      contextContinuity: Number((0.10 * continuityScore).toFixed(2)),
+      preferenceFit: Number((0.05 * preferenceScore).toFixed(2)),
+      completionProbability: Number((0.10 * probabilityScore).toFixed(2)),
+      raw: {
+        priority: priorityScore,
+        urgency: urgencyScore,
+        energy: energyScore,
+        deadline: deadlineScore,
+        continuity: continuityScore,
+        preference: preferenceScore,
+        probability: probabilityScore
+      }
+    }
+  };
+}
+
+/**
+ * Evaluates and ranks candidate tasks in descending order of candidateScore.
+ * @param {Array<Object>} tasks 
+ * @param {Object} [context] 
+ * @returns {Array<Object>} Sorted tasks with candidateScore metadata attached
+ */
+export function rankCandidateTasks(tasks, context = {}) {
+  if (!Array.isArray(tasks)) return [];
+  
+  const scored = tasks.map(task => {
+    const calculation = calculateCandidateScore(task, context);
+    return {
+      task,
+      score: calculation.score,
+      breakdown: calculation.breakdown
+    };
+  });
+
+  // Sort descending by score. Secondary tie-breaks: priority, urgency, shorter duration
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    const pA = a.task.priority || 0;
+    const pB = b.task.priority || 0;
+    if (pB !== pA) return pB - pA;
+    const uA = a.task.urgency || 0;
+    const uB = b.task.urgency || 0;
+    if (uB !== uA) return uB - uA;
+    const durA = a.task.estimatedMinutes || 30;
+    const durB = b.task.estimatedMinutes || 30;
+    return durA - durB;
+  });
+
+  return scored.map(item => ({
+    ...item.task,
+    _candidateScore: item.score,
+    _candidateScoreBreakdown: item.breakdown
+  }));
 }

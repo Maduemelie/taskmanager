@@ -22,6 +22,7 @@ const ASSETS_TO_CACHE = [
   './js/engine/recurrence.js',
   './js/engine/scoring.js',
   './js/engine/planner.js',
+  './js/engine/deterministicScheduler.js',
   './js/engine/reschedule.js',
   './js/components/toast.js',
   './js/components/modal.js',
