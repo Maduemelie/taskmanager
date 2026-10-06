@@ -27,8 +27,10 @@ export function scoreTask(task, context) {
   }
 
   // 2. User Priority (+10 to +50)
-  const priority = task.priority || 3;
-  score += priority * 10;
+  const priority = typeof task.priority === 'number' ? task.priority : 3;
+  // Support both canonical 0-100 priority scale and legacy 1-5 scale gracefully
+  const normalizedPriority = priority > 5 ? (priority / 100) * 50 : priority * 10;
+  score += Math.round(normalizedPriority);
 
   // 3. Frequency Weight
   if (task.recurrence) {
@@ -72,7 +74,8 @@ export function scoreTask(task, context) {
   }
 
   // 7. Energy Match (+15 if matches user's current energy window)
-  if (task.energyLevel === energyWindow) {
+  const currentTaskEnergy = task.energy || task.energyLevel;
+  if (currentTaskEnergy === energyWindow) {
     score += 15;
   }
 

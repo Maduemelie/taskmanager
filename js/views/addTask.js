@@ -150,11 +150,20 @@ export function initAddTaskView() {
       return;
     }
 
+    const taskTitle = taskNameInput.value.trim();
+    const taskCat = document.getElementById('task-bucket').value;
+
+    const sliderPriority = parseInt(priorityInput.value, 10);
+    const canonicalPriority = Math.max(0, Math.min(100, sliderPriority * 20));
+
     const taskData = {
-      name: taskNameInput.value.trim(),
-      bucket: document.getElementById('task-bucket').value,
-      priority: parseInt(priorityInput.value, 10),
+      title: taskTitle,
+      name: taskTitle,
+      categoryId: taskCat,
+      bucket: taskCat,
+      priority: canonicalPriority,
       estimatedMinutes: parseInt(durationInput.value, 10),
+      energy: selectedEnergy,
       energyLevel: selectedEnergy,
       preferredTime: document.getElementById('task-preferred-time').value,
       recurrence: null,
@@ -190,6 +199,10 @@ export function initAddTaskView() {
 
     if (editId) {
       // Update Mode
+      const existingTask = await getTask(editId);
+      if (existingTask && existingTask.status === 'inbox') {
+        taskData.status = 'ready';
+      }
       await updateTask(editId, taskData);
       showToast('Task updated successfully 🎉', 'success');
     } else {
@@ -267,10 +280,11 @@ export async function renderAddTaskView() {
 
     const task = await getTask(taskId);
     if (task) {
-      document.getElementById('task-name').value = task.name;
-      bucketSelect.value = task.bucket;
-      document.getElementById('task-priority').value = task.priority;
-      document.getElementById('task-priority-display').textContent = task.priority;
+      document.getElementById('task-name').value = task.title || task.name || '';
+      bucketSelect.value = task.categoryId || task.bucket;
+      const displayPriority = task.priority > 5 ? Math.max(1, Math.min(5, Math.round(task.priority / 20))) : Math.max(1, Math.min(5, Math.round(task.priority) || 1));
+      document.getElementById('task-priority').value = displayPriority;
+      document.getElementById('task-priority-display').textContent = displayPriority;
       document.getElementById('task-duration').value = task.estimatedMinutes;
 
       // Select matching duration preset chip if exists
@@ -279,10 +293,11 @@ export async function renderAddTaskView() {
       });
 
       // Select Energy
+      const taskE = task.energy || task.energyLevel || 'medium';
       document.querySelectorAll('#task-energy-selector .energy-option').forEach(o => {
-        const isMatch = o.dataset.energy === task.energyLevel;
+        const isMatch = o.dataset.energy === taskE;
         o.classList.toggle('selected', isMatch);
-        if (isMatch) selectedEnergy = task.energyLevel;
+        if (isMatch) selectedEnergy = taskE;
       });
 
       document.getElementById('task-preferred-time').value = task.preferredTime;

@@ -739,3 +739,153 @@ section.view.active {
   color: var(--surface-color);
   border-color: var(--primary-color);
 }
+
+/* --- Floating Quick Add Composer (Section 4.4) --- */
+#bucket-view {
+  padding-bottom: 120px; /* Room for floating composer */
+}
+
+#bucket-view #bucket-add-task-btn {
+  bottom: calc(var(--spacing-xxl) + 115px);
+}
+
+.quick-add-floating-container {
+  position: fixed;
+  bottom: calc(var(--spacing-xxl) + 40px); /* Just above bottom nav */
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 32px);
+  max-width: 560px;
+  z-index: 95;
+  background-color: var(--surface-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  border: 1.5px solid var(--border-color);
+  padding: 8px 12px;
+  backdrop-filter: blur(8px);
+  transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
+}
+
+.quick-add-floating-container:focus-within {
+  border-color: var(--primary-color);
+  box-shadow: 0 8px 30px rgba(232, 112, 58, 0.25);
+}
+
+.quick-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.quick-add-input-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.quick-add-icon {
+  font-size: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary-color);
+  user-select: none;
+}
+
+.quick-add-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 0.95rem;
+  color: var(--text-color);
+  outline: none;
+  font-family: inherit;
+  padding: 6px 0;
+}
+
+.quick-add-input::placeholder {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.quick-add-btn {
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.quick-add-live-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  padding-top: 6px;
+  border-top: 1px dashed var(--border-light);
+  margin-top: 4px;
+}
+
+.quick-add-preview-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 700;
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+}
+
+/* --- AI Inbox Section (Section 4) --- */
+.bucket-inbox-section {
+  background-color: #FFFDF7;
+  border: 1.5px solid #F0E6D2;
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.bucket-inbox-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+}
+
+.bucket-inbox-title {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-weight: 800;
+  font-size: 1rem;
+  color: #8C5B00;
+}
+
+.bucket-inbox-subtitle {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.bucket-inbox-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+}
+
+.bucket-inbox-section.collapsed .bucket-inbox-content {
+  display: none;
+}
+
+.bucket-inbox-section .bucket-toggle-arrow {
+  transition: transform var(--transition-fast);
+}
+
+.bucket-inbox-section.collapsed .bucket-toggle-arrow {
+  transform: rotate(-90deg);
+}
+

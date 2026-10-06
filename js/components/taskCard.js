@@ -1,5 +1,6 @@
 /* js/components/taskCard.js */
 import { triggerHaptic } from '../utils/haptics.js';
+import { today, toReadableDate } from '../utils/date.js';
 
 /**
  * Creates and renders a task card DOM element.
@@ -96,10 +97,10 @@ export function renderTaskCard(task, mode, callbacks = {}) {
   title.style.overflow = 'hidden';
   title.style.textOverflow = 'ellipsis';
   title.style.wordBreak = 'break-word';
-  title.textContent = task.name;
+  title.textContent = task.title || task.name || 'Untitled Task';
   cardContent.appendChild(title);
 
-  // Footer Metadata row
+  // Footer Metadata row — Surfaces essential metadata without clutter (no full description)
   const metaRow = document.createElement('div');
   metaRow.style.display = 'flex';
   metaRow.style.flexWrap = 'wrap';
@@ -108,27 +109,48 @@ export function renderTaskCard(task, mode, callbacks = {}) {
   metaRow.style.fontSize = '0.8rem';
   metaRow.style.color = 'var(--text-muted)';
 
-  // Priority Dots
+  // Priority Dots (●●●○○ format per Spec Section 4)
   const pDots = document.createElement('span');
+  pDots.className = 'priority-indicator';
   pDots.style.fontWeight = 'bold';
-  pDots.style.color = task.priority >= 4 ? 'var(--primary-color)' : 'var(--text-muted)';
-  pDots.textContent = '•'.repeat(task.priority || 3);
+  const priorityNum = typeof task.priority === 'number' ? task.priority : 50;
+  const dotsCount = Math.max(1, Math.min(5, priorityNum > 5 ? Math.ceil(priorityNum / 20) : (Math.round(priorityNum) || 1)));
+  pDots.style.color = dotsCount >= 4 ? 'var(--primary-color)' : 'var(--text-muted)';
+  pDots.textContent = `Priority ${'●'.repeat(dotsCount)}${'○'.repeat(5 - dotsCount)}`;
   metaRow.appendChild(pDots);
 
   // Estimated duration
   const duration = document.createElement('span');
   duration.className = 'chip';
   duration.style.padding = '2px 8px';
-  duration.innerHTML = `⏱️ ${task.estimatedMinutes}m`;
+  duration.innerHTML = `⏱️ ${task.estimatedMinutes || 30}m`;
   metaRow.appendChild(duration);
 
   // Energy required
+  const energyLevel = task.energy || task.energyLevel || 'medium';
   const energy = document.createElement('span');
   energy.className = 'chip';
   energy.style.padding = '2px 8px';
-  const batteryEmoji = task.energyLevel === 'high' ? '🚀' : task.energyLevel === 'medium' ? '⚡' : '🔋';
-  energy.innerHTML = `${batteryEmoji} ${task.energyLevel}`;
+  const batteryEmoji = energyLevel === 'high' ? '🚀' : energyLevel === 'medium' ? '⚡' : '🔋';
+  const energyLabel = energyLevel.charAt(0).toUpperCase() + energyLevel.slice(1);
+  energy.innerHTML = `${batteryEmoji} ${energyLabel} energy`;
   metaRow.appendChild(energy);
+
+  // Deadline chip (surfaces essential deadline metadata if present)
+  if (task.deadline) {
+    const deadlineChip = document.createElement('span');
+    deadlineChip.className = 'chip';
+    deadlineChip.style.padding = '2px 8px';
+    const isPast = task.deadline < today();
+    if (isPast) {
+      deadlineChip.style.backgroundColor = '#FEE2E2';
+      deadlineChip.style.color = '#B91C1C';
+      deadlineChip.innerHTML = `⚠️ Overdue (${toReadableDate(task.deadline)})`;
+    } else {
+      deadlineChip.innerHTML = `📅 ${toReadableDate(task.deadline)}`;
+    }
+    metaRow.appendChild(deadlineChip);
+  }
 
   // Streaks badge
   if (task.currentStreak && task.currentStreak >= 3) {
@@ -138,8 +160,16 @@ export function renderTaskCard(task, mode, callbacks = {}) {
     metaRow.appendChild(streak);
   }
 
-  // Recurrence label
-  if (mode === 'bucket' && task.recurrence) {
+  // Recurrence / Habit label
+  if (task.type === 'habit' || task.isHabit) {
+    const habitBadge = document.createElement('span');
+    habitBadge.className = 'chip';
+    habitBadge.style.backgroundColor = '#e8f5e9';
+    habitBadge.style.color = 'var(--secondary-color)';
+    const recType = task.recurrence?.type ? ` • ${task.recurrence.type.charAt(0).toUpperCase() + task.recurrence.type.slice(1)}` : ' • Daily';
+    habitBadge.innerHTML = `📈 Habit${recType}`;
+    metaRow.appendChild(habitBadge);
+  } else if (task.recurrence) {
     const rec = document.createElement('span');
     rec.className = 'chip';
     rec.style.backgroundColor = 'var(--accent-light)';
@@ -148,14 +178,14 @@ export function renderTaskCard(task, mode, callbacks = {}) {
     metaRow.appendChild(rec);
   }
 
-  // Habit label
-  if (task.isHabit) {
-    const habitBadge = document.createElement('span');
-    habitBadge.className = 'chip';
-    habitBadge.style.backgroundColor = '#e8f5e9'; // var(--secondary-light) fallback
-    habitBadge.style.color = 'var(--secondary-color)';
-    habitBadge.innerHTML = `📈 Habit`;
-    metaRow.appendChild(habitBadge);
+  // AI Inbox status badge
+  if (task.status === 'inbox') {
+    const inboxChip = document.createElement('span');
+    inboxChip.className = 'badge';
+    inboxChip.style.backgroundColor = '#FFF3CD';
+    inboxChip.style.color = '#856404';
+    inboxChip.innerHTML = `📥 Needs clarification`;
+    metaRow.appendChild(inboxChip);
   }
 
   cardContent.appendChild(metaRow);

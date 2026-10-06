@@ -15,6 +15,9 @@ import { initNavigation } from './components/nav.js';
 import { initInstallPrompt } from './components/installPrompt.js';
 import { checkOnboarding } from './components/onboarding.js';
 
+import { parseNaturalLanguageTask, quickCaptureTask } from './engine/quickCapture.js';
+import { transitionTaskStatus, normalizeTask } from './models/task.js';
+
 const bootDate = today();
 
 // Global App State
@@ -23,6 +26,14 @@ window.PlanFlow = {
   state: {
     currentView: 'today',
     preferences: null
+  },
+  quickCapture: {
+    parse: parseNaturalLanguageTask,
+    capture: quickCaptureTask
+  },
+  taskModel: {
+    normalize: normalizeTask,
+    transition: transitionTaskStatus
   }
 };
 

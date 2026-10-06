@@ -163,23 +163,53 @@
 
       <!-- 3. Task Bucket View -->
       <section id="bucket-view" class="view">
-        <header style="margin-bottom: var(--spacing-lg);">
-          <h1>Task Bucket</h1>
-          <p style="font-size: 0.9rem; color: var(--text-muted);">All your possibilities, ready to be scheduled.</p>
+        <header class="bucket-header-main" style="margin-bottom: var(--spacing-lg);">
+          <div style="display: flex; justify-content: space-between; align-items: baseline;">
+            <h1>Task Bucket</h1>
+            <span id="bucket-total-count" class="badge" style="font-size: 0.85rem;">0 tasks</span>
+          </div>
+          <p style="font-size: 0.9rem; color: var(--text-muted); margin-top: 2px;">All your possibilities, ready to be scheduled.</p>
         </header>
 
         <!-- Search / Filters -->
         <div class="form-group" style="margin-bottom: var(--spacing-md);">
-          <input type="text" id="bucket-search" class="input" placeholder="Search tasks..." style="padding: var(--spacing-md);">
+          <input type="text" id="bucket-search" class="input" placeholder="Search tasks..." style="padding: var(--spacing-md);" aria-label="Search tasks">
         </div>
         
         <div id="bucket-filter-chips" style="display: flex; gap: var(--spacing-sm); overflow-x: auto; padding-bottom: 8px; margin-bottom: var(--spacing-lg); scrollbar-width: none;">
           <!-- Filter chips dynamically populated -->
         </div>
 
+        <!-- AI Inbox Section (Ambiguous or newly quick-captured tasks needing review) -->
+        <div id="bucket-inbox-section" class="bucket-inbox-section hidden">
+          <!-- Populated dynamically if inbox tasks exist -->
+        </div>
+
         <!-- Collapsible Bucket Sections -->
         <div id="bucket-list" class="bucket-grid">
           <!-- Dynamic buckets generated here -->
+        </div>
+
+        <!-- Floating Quick Add Composer (Section 4.4) -->
+        <div id="quick-add-container" class="quick-add-floating-container">
+          <form id="quick-add-form" class="quick-add-form" autocomplete="off">
+            <div class="quick-add-input-bar">
+              <span class="quick-add-icon">✨</span>
+              <input 
+                type="text" 
+                id="quick-add-input" 
+                class="quick-add-input" 
+                placeholder="Quick capture: &quot;Study for an hour tomorrow&quot;..." 
+                aria-label="Natural language task capture"
+              >
+              <button type="submit" id="quick-add-submit-btn" class="btn btn-primary quick-add-btn">
+                Add
+              </button>
+            </div>
+            <div id="quick-add-live-preview" class="quick-add-live-preview hidden">
+              <!-- Live extracted tag previews -->
+            </div>
+          </form>
         </div>
 
         <!-- Add Task FAB -->

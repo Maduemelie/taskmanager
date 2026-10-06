@@ -114,3 +114,15 @@ export function toReadableDate(dateStr) {
     day: 'numeric' 
   });
 }
+
+/**
+ * Adds a given number of days to a YYYY-MM-DD date string.
+ * @param {string} dateStr YYYY-MM-DD
+ * @param {number} days Number of days to add (can be negative)
+ * @returns {string} YYYY-MM-DD
+ */
+export function addDays(dateStr, days) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return formatDateLocal(d);
+}

@@ -113,7 +113,8 @@ export function initPlanDayView() {
 
   // 4. Generate Suggestions Button
   generateBtn.addEventListener('click', async () => {
-    const tasks = await getActiveTasks();
+    const allTasks = await getActiveTasks();
+    const tasks = allTasks.filter(t => t.status !== 'inbox');
     const prefs = await getPreferences();
     
     // Call planner engine
@@ -424,7 +425,8 @@ async function showAddMoreModal() {
   content.style.flexDirection = 'column';
   content.style.gap = 'var(--spacing-md)';
 
-  const activeTasks = await getActiveTasks();
+  const allActiveTasks = await getActiveTasks();
+  const activeTasks = allActiveTasks.filter(t => t.status !== 'inbox');
   const prefs = await getPreferences();
   const bufferMinutes = typeof prefs.bufferMinutes === 'number' ? prefs.bufferMinutes : 10;
   
