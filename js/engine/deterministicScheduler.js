@@ -227,7 +227,9 @@ export function generateDeterministicSchedule(options = {}) {
 
   const bufferMinutes = typeof options.bufferMinutes === 'number'
     ? options.bufferMinutes
-    : (typeof options.preferences?.bufferMinutes === 'number' ? options.preferences.bufferMinutes : 10);
+    : (typeof options.minBufferMinutes === 'number'
+      ? options.minBufferMinutes
+      : (typeof options.preferences?.bufferMinutes === 'number' ? options.preferences.bufferMinutes : 10));
 
   const maxFocusBlockMinutes = options.maxFocusBlockMinutes || 120;
   const energyWindow = options.energyProfile || options.energyWindow || 'medium';

@@ -79,6 +79,33 @@
           <p style="font-size: 0.9rem; color: var(--text-muted);">Generate a focused schedule based on your available time and priorities.</p>
         </header>
 
+        <!-- Capacity Summary (Section 5.1 & 5.2) -->
+        <div id="plan-capacity-summary-card" class="capacity-summary-card">
+          <div class="capacity-summary-title">Today's Capacity Overview</div>
+          <div class="capacity-summary-grid">
+            <div class="metric-item">
+              <span class="metric-val" id="metric-avail-time">--</span>
+              <span class="metric-lbl">Available</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-val" id="metric-unscheduled-count">0</span>
+              <span class="metric-lbl">Unscheduled</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-val" id="metric-priority-count">0</span>
+              <span class="metric-lbl">High Priority</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-val" id="metric-habits-count">0</span>
+              <span class="metric-lbl">Habits Due</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-val" id="metric-commitments-count">0</span>
+              <span class="metric-lbl">Locked</span>
+            </div>
+          </div>
+        </div>
+
         <!-- Planning Setup Screen (Pre-Plan State) -->
         <div id="plan-pre-setup" class="plan-hero">
           <div class="plan-hero-icon">✨</div>
@@ -91,11 +118,27 @@
           </button>
         </div>
 
-        <!-- Setup Questions (Visible during flow) -->
+        <!-- Setup Questions & Preferences (Section 5.4) -->
         <div id="plan-setup" class="plan-setup-container hidden">
+          <!-- Working Hours Availability Windows -->
+          <div class="form-group">
+            <label class="form-label">Working Hours Window</label>
+            <div style="display: flex; align-items: center; gap: var(--spacing-md);">
+              <div style="flex: 1;">
+                <label style="font-size: 0.75rem; color: var(--text-muted);">Start Time</label>
+                <input type="time" id="plan-window-start" class="input" value="09:00">
+              </div>
+              <span style="margin-top: 16px; font-weight: 700; color: var(--text-muted);">to</span>
+              <div style="flex: 1;">
+                <label style="font-size: 0.75rem; color: var(--text-muted);">End Time</label>
+                <input type="time" id="plan-window-end" class="input" value="17:00">
+              </div>
+            </div>
+          </div>
+
           <!-- Capacity slider -->
           <div class="form-group">
-            <label class="form-label" for="plan-capacity">How much focus time do you have today?</label>
+            <label class="form-label" for="plan-capacity">Focus Target Duration</label>
             <div style="display: flex; align-items: center; gap: var(--spacing-md);">
               <input type="range" id="plan-capacity" class="range" min="30" max="480" step="30" value="180">
               <span id="plan-capacity-display" style="font-weight: 800; min-width: 70px; text-align: right;">3h 0m</span>
@@ -105,6 +148,17 @@
               <button class="btn btn-secondary capacity-preset" data-val="60" style="padding: 4px 10px; font-size: 0.8rem;">1h</button>
               <button class="btn btn-secondary capacity-preset" data-val="180" style="padding: 4px 10px; font-size: 0.8rem;">3h</button>
               <button class="btn btn-secondary capacity-preset" data-val="300" style="padding: 4px 10px; font-size: 0.8rem;">5h</button>
+            </div>
+          </div>
+
+          <!-- Planning Style Selector (Section 5.4) -->
+          <div class="form-group">
+            <label class="form-label">Planning Style</label>
+            <div class="planning-style-group" id="planning-style-selector">
+              <button type="button" class="style-pill selected" data-style="balanced">⚖️ Balanced</button>
+              <button type="button" class="style-pill" data-style="deep_work">🧠 Deep Work</button>
+              <button type="button" class="style-pill" data-style="quick_wins">⚡ Quick Wins</button>
+              <button type="button" class="style-pill" data-style="flexible">🌊 Flexible</button>
             </div>
           </div>
 
@@ -127,8 +181,39 @@
             </div>
           </div>
 
+          <!-- Advanced Scheduling Preferences Collapsible / Toggle Group -->
+          <div class="form-group" style="border-top: 1px solid var(--border-color); padding-top: var(--spacing-md);">
+            <label class="form-label" style="margin-bottom: var(--spacing-sm);">Planning Preferences</label>
+            <div class="pref-toggle-grid">
+              <label class="pref-toggle-row">
+                <input type="checkbox" id="pref-breaks" checked>
+                <span>Protect Rest Breaks</span>
+              </label>
+              <label class="pref-toggle-row">
+                <input type="checkbox" id="pref-energy-matching" checked>
+                <span>Energy Matching</span>
+              </label>
+              <label class="pref-toggle-row">
+                <input type="checkbox" id="pref-task-splitting" checked>
+                <span>Split Long Tasks (&gt;90m)</span>
+              </label>
+            </div>
+
+            <!-- Buffer & Focus block sliders -->
+            <div style="display: flex; gap: var(--spacing-md); margin-top: var(--spacing-md); flex-wrap: wrap;">
+              <div style="flex: 1; min-width: 140px;">
+                <label style="font-size: 0.75rem; color: var(--text-muted);">Min Buffer: <strong id="pref-buffer-display">10m</strong></label>
+                <input type="range" id="pref-buffer" class="range" min="0" max="60" step="5" value="10">
+              </div>
+              <div style="flex: 1; min-width: 140px;">
+                <label style="font-size: 0.75rem; color: var(--text-muted);">Max Focus Block: <strong id="pref-focus-block-display">90m</strong></label>
+                <input type="range" id="pref-focus-block" class="range" min="30" max="180" step="15" value="90">
+              </div>
+            </div>
+          </div>
+
           <button id="plan-generate-btn" class="btn btn-primary" style="width: 100%; margin-top: var(--spacing-md);">
-            Generate Suggestions
+            Generate My Day 🎯
           </button>
         </div>
 
@@ -136,14 +221,27 @@
         <div id="plan-suggestions" class="hidden">
           <div class="plan-suggestions-header">
             <div>
-              <h3>Suggested Today</h3>
+              <h3>Proposed Schedule</h3>
               <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">
-                Tweak start times & durations below to fit your day.
+                Review and fine-tune your proposed plan.
               </p>
             </div>
-            <span id="suggestions-capacity-summary" style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted);">
-              0m / 0m
-            </span>
+          </div>
+
+          <!-- Proposal Metrics Bar (Section 5.5) -->
+          <div id="plan-proposal-metrics" class="proposal-metrics-bar">
+            <div class="proposal-metric">
+              <span class="pmetric-lbl">Planned Focus</span>
+              <span class="pmetric-val" id="proposal-focus-min">0m</span>
+            </div>
+            <div class="proposal-metric">
+              <span class="pmetric-lbl">Utilization</span>
+              <span class="pmetric-val" id="proposal-utilization">0%</span>
+            </div>
+            <div class="proposal-metric">
+              <span class="pmetric-lbl">Priority Coverage</span>
+              <span class="pmetric-val" id="proposal-coverage">0%</span>
+            </div>
           </div>
 
           <div id="suggestions-list-container" class="plan-suggestions-list">
@@ -155,7 +253,7 @@
               + Add More
             </button>
             <button id="plan-confirm-btn" class="btn btn-primary" style="flex: 1;">
-              Let's Do It!
+              Approve Plan ✨
             </button>
           </div>
         </div>

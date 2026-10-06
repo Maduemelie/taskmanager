@@ -1,6 +1,13 @@
 /* js/views/planDay.js */
 import db from '../db.js';
 import { generateDayPlan } from '../engine/planner.js';
+import { 
+  generateDeterministicSchedule, 
+  validateSchedule, 
+  formatMinutesToTime, 
+  parseTimeToMinutes 
+} from '../engine/deterministicScheduler.js';
+import { calculateCandidateScore, rankCandidateTasks } from '../engine/scoring.js';
 import { getTodayPlan, createPlan, updatePlan } from '../models/plan.js';
 import { getActiveTasks } from '../models/task.js';
 import { getPreferences } from '../models/preferences.js';
@@ -10,8 +17,10 @@ import { today, formatTime, formatTime12 } from '../utils/date.js';
 import { stagger, slideUp } from '../utils/animate.js';
 
 let activeEnergy = 'medium';
-let generatedSuggestions = []; // Array of { task, isChecked }
+let activePlanningStyle = 'balanced';
+let generatedSuggestions = []; // Array of { task, isChecked, block, scheduledTime }
 let initialCapacity = 180; // Default capacity in minutes (3 hours)
+let lastScheduleResult = null;
 
 /**
  * Calculates real-time start time if planning for today after wake time.
@@ -34,7 +43,6 @@ export function getEffectiveStartTime(wakeTime = '07:00') {
 
 /**
  * Helper to sequentially assign start times to a list of tasks with transition buffers.
- * Prevents timeline gaps when tasks are unchecked.
  */
 export function rescheduleSequentially(selectedTasks, startTime = '07:00', bufferMinutes = 10) {
   const [startH, startM] = startTime.split(':').map(Number);
@@ -58,6 +66,46 @@ export function rescheduleSequentially(selectedTasks, startTime = '07:00', buffe
 }
 
 /**
+ * Computes and renders real-time Capacity Summary metrics (Section 5.1 & 5.2).
+ */
+export async function updateCapacitySummary() {
+  try {
+    const allTasks = await getActiveTasks();
+    const activeTasks = allTasks.filter(t => t.status !== 'inbox');
+
+    const winStartInput = document.getElementById('plan-window-start');
+    const winEndInput = document.getElementById('plan-window-end');
+    const winStart = winStartInput ? winStartInput.value || '09:00' : '09:00';
+    const winEnd = winEndInput ? winEndInput.value || '17:00' : '17:00';
+
+    const startMin = parseTimeToMinutes(winStart);
+    const endMin = parseTimeToMinutes(winEnd);
+    const availableMinutes = Math.max(0, endMin - startMin);
+    const availHours = Math.floor(availableMinutes / 60);
+    const availMins = availableMinutes % 60;
+
+    const availTimeEl = document.getElementById('metric-avail-time');
+    if (availTimeEl) availTimeEl.textContent = `${availHours}h ${availMins}m`;
+
+    const unscheduledEl = document.getElementById('metric-unscheduled-count');
+    if (unscheduledEl) unscheduledEl.textContent = activeTasks.length;
+
+    const highPriorityTasks = activeTasks.filter(t => (t.priority >= 70 || t.priority >= 4));
+    const priorityEl = document.getElementById('metric-priority-count');
+    if (priorityEl) priorityEl.textContent = highPriorityTasks.length;
+
+    const habitsDue = activeTasks.filter(t => t.type === 'habit' || t.recurrence);
+    const habitsEl = document.getElementById('metric-habits-count');
+    if (habitsEl) habitsEl.textContent = habitsDue.length;
+
+    const commitmentsEl = document.getElementById('metric-commitments-count');
+    if (commitmentsEl) commitmentsEl.textContent = '0';
+  } catch (err) {
+    console.error('Error updating capacity summary:', err);
+  }
+}
+
+/**
  * Initializes listeners for sliders, energy chips, presets, and action buttons in Plan view.
  */
 export function initPlanDayView() {
@@ -69,6 +117,15 @@ export function initPlanDayView() {
   const capacityDisplay = document.getElementById('plan-capacity-display');
   const presetBtns = document.querySelectorAll('.capacity-preset');
   const energyOptions = document.querySelectorAll('#plan-setup .energy-option');
+
+  const winStartInput = document.getElementById('plan-window-start');
+  const winEndInput = document.getElementById('plan-window-end');
+
+  const stylePills = document.querySelectorAll('#planning-style-selector .style-pill');
+  const prefBufferInput = document.getElementById('pref-buffer');
+  const prefBufferDisplay = document.getElementById('pref-buffer-display');
+  const prefFocusInput = document.getElementById('pref-focus-block');
+  const prefFocusDisplay = document.getElementById('pref-focus-block-display');
 
   const generateBtn = document.getElementById('plan-generate-btn');
   const addMoreBtn = document.getElementById('plan-add-more-btn');
@@ -84,7 +141,13 @@ export function initPlanDayView() {
     });
   }
 
-  // 2. Capacity Slider & Presets
+  // 2. Working Windows change triggers capacity recalculation
+  if (winStartInput && winEndInput) {
+    winStartInput.addEventListener('change', updateCapacitySummary);
+    winEndInput.addEventListener('change', updateCapacitySummary);
+  }
+
+  // 3. Capacity Slider & Presets
   if (capacityInput && capacityDisplay) {
     capacityInput.addEventListener('input', (e) => {
       const val = parseInt(e.target.value, 10);
@@ -102,7 +165,28 @@ export function initPlanDayView() {
     });
   });
 
-  // 3. Energy Selector
+  // 4. Planning Style Selection (Section 5.4)
+  stylePills.forEach(pill => {
+    pill.addEventListener('click', () => {
+      stylePills.forEach(p => p.classList.remove('selected'));
+      pill.classList.add('selected');
+      activePlanningStyle = pill.dataset.style || 'balanced';
+    });
+  });
+
+  // 5. Sliders (Buffer & Focus Block)
+  if (prefBufferInput && prefBufferDisplay) {
+    prefBufferInput.addEventListener('input', (e) => {
+      prefBufferDisplay.textContent = `${e.target.value}m`;
+    });
+  }
+  if (prefFocusInput && prefFocusDisplay) {
+    prefFocusInput.addEventListener('input', (e) => {
+      prefFocusDisplay.textContent = `${e.target.value}m`;
+    });
+  }
+
+  // 6. Energy Selector
   energyOptions.forEach(opt => {
     opt.addEventListener('click', () => {
       energyOptions.forEach(o => o.classList.remove('selected'));
@@ -111,25 +195,63 @@ export function initPlanDayView() {
     });
   });
 
-  // 4. Generate Suggestions Button
+  // 7. Generate Plan Proposal Button (Section 5.5)
   generateBtn.addEventListener('click', async () => {
     const allTasks = await getActiveTasks();
     const tasks = allTasks.filter(t => t.status !== 'inbox');
     const prefs = await getPreferences();
-    
-    // Call planner engine
-    const plannedList = generateDayPlan(tasks, prefs, initialCapacity, activeEnergy);
-    
-    // Store generated list locally with checked state
-    generatedSuggestions = plannedList.map(item => {
-      // Find full task details from master list
-      const masterTask = tasks.find(t => t.id === item.taskId);
+
+    const winStart = winStartInput ? winStartInput.value || '09:00' : '09:00';
+    const winEnd = winEndInput ? winEndInput.value || '17:00' : '17:00';
+    const bufferMinutes = prefBufferInput ? parseInt(prefBufferInput.value, 10) : 10;
+    const maxFocusBlock = prefFocusInput ? parseInt(prefFocusInput.value, 10) : 90;
+
+    const breaksEnabled = document.getElementById('pref-breaks') ? document.getElementById('pref-breaks').checked : true;
+    const energyMatching = document.getElementById('pref-energy-matching') ? document.getElementById('pref-energy-matching').checked : true;
+
+    // Call deterministic scheduling engine (Section 8.4)
+    const scheduleResult = generateDeterministicSchedule({
+      tasks,
+      availableWindows: [{ start: winStart, end: winEnd }],
+      strategy: activePlanningStyle,
+      minBufferMinutes: bufferMinutes,
+      maxFocusBlockMinutes: maxFocusBlock,
+      energyLevel: activeEnergy,
+      breaksEnabled,
+      energyMatchingEnabled: energyMatching,
+      capacityMinutes: initialCapacity
+    });
+
+    lastScheduleResult = scheduleResult;
+
+    // Map task blocks into editable proposal list
+    const taskBlocks = scheduleResult.blocks.filter(b => b.type === 'task');
+    generatedSuggestions = taskBlocks.map(block => {
+      const masterTask = tasks.find(t => t.id === block.taskId) || {
+        id: block.taskId,
+        name: block.title || 'Task',
+        title: block.title || 'Task',
+        estimatedMinutes: block.duration || 30,
+        bucket: block.categoryId || 'home',
+        priority: block.priority || 50
+      };
+
       return {
-        task: masterTask || { id: item.taskId, name: item.name, estimatedMinutes: item.estimatedMinutes, bucket: item.bucket, priority: item.priority },
+        task: masterTask,
         isChecked: true,
-        scheduledTime: item.scheduledTime
+        block: block,
+        scheduledTime: block.start
       };
     });
+
+    // Update Proposal Metrics Bar (Section 5.5)
+    const focusMinEl = document.getElementById('proposal-focus-min');
+    const utilEl = document.getElementById('proposal-utilization');
+    const covEl = document.getElementById('proposal-coverage');
+
+    if (focusMinEl) focusMinEl.textContent = `${scheduleResult.metrics?.plannedFocusMinutes || 0}m`;
+    if (utilEl) utilEl.textContent = `${Math.round((scheduleResult.metrics?.utilization || 0) * 100)}%`;
+    if (covEl) covEl.textContent = `${Math.round((scheduleResult.metrics?.priorityCoverage || 0) * 100)}%`;
 
     renderSuggestionsList();
     
@@ -138,14 +260,14 @@ export function initPlanDayView() {
     document.getElementById('plan-suggestions').classList.remove('hidden');
   });
 
-  // 5. Add More button
+  // 8. Add More button
   if (addMoreBtn) {
     addMoreBtn.addEventListener('click', async () => {
       await showAddMoreModal();
     });
   }
 
-  // 6. Confirm / Let's Do It! button
+  // 9. Approve Plan (Section 5.5)
   if (confirmBtn) {
     confirmBtn.addEventListener('click', async () => {
       const selectedTasks = generatedSuggestions.filter(item => item.isChecked);
@@ -154,7 +276,7 @@ export function initPlanDayView() {
         return;
       }
 
-      // Sort selected tasks chronologically by the user-picked or adjusted scheduled times
+      // Sort selected tasks chronologically
       selectedTasks.sort((a, b) => a.scheduledTime.localeCompare(b.scheduledTime));
 
       const plannedTasksInput = selectedTasks.map(item => ({
@@ -165,7 +287,7 @@ export function initPlanDayView() {
       }));
 
       await createPlan(today(), initialCapacity, plannedTasksInput);
-      showToast('Daily plan created! Let\'s focus ✨', 'success');
+      showToast('Daily plan approved! Let\'s focus ✨', 'success');
       
       // Navigate to Today view
       window.location.hash = '#today';
@@ -177,6 +299,8 @@ export function initPlanDayView() {
  * Renders the state of the Day Planning flow depending on if today's plan is already generated.
  */
 export async function renderPlanDayView() {
+  await updateCapacitySummary();
+
   const plan = await getTodayPlan();
   
   const preSetupSec = document.getElementById('plan-pre-setup');
@@ -207,7 +331,7 @@ export async function renderPlanDayView() {
       <div class="plan-hero-icon">📋</div>
       <h2>Plan Already Created</h2>
       <p style="color: var(--text-muted); max-width: 300px; margin-bottom: var(--spacing-lg);">
-        You have ${plan.plannedTasks.length} tasks scheduled for today.
+        You have ${plan.plannedTasks?.length || 0} tasks scheduled for today.
       </p>
       <div style="display: flex; flex-direction: column; gap: var(--spacing-sm); width: 100%; max-width: 280px;">
         <button id="exists-view-schedule-btn" class="btn btn-primary">
@@ -242,7 +366,7 @@ export async function renderPlanDayView() {
       </button>
     `;
     
-    // Wire up start button again (since we replaced innerHTML)
+    // Wire up start button
     document.getElementById('plan-start-setup-btn').addEventListener('click', () => {
       preSetupSec.classList.add('hidden');
       setupSec.classList.remove('hidden');
@@ -259,7 +383,6 @@ function updateCapacityLabel(minutes, displayEl) {
 
 async function renderSuggestionsList() {
   const container = document.getElementById('suggestions-list-container');
-  const capacitySummary = document.getElementById('suggestions-capacity-summary');
   if (!container) return;
 
   container.innerHTML = '';
@@ -267,14 +390,10 @@ async function renderSuggestionsList() {
   const prefs = await getPreferences();
   const bucketMap = new Map((prefs.buckets || []).map(b => [b.id, b]));
 
-  let totalScheduledMin = 0;
-  
   generatedSuggestions.forEach((item, index) => {
-    if (item.isChecked) {
-      totalScheduledMin += item.task.estimatedMinutes;
-    }
-
-    const bucket = bucketMap.get(item.task.bucket) || { name: item.task.bucket || 'General', emoji: '📌', color: '#8E8E8E' };
+    const taskName = item.task.title || item.task.name || 'Untitled Task';
+    const taskBucket = item.task.categoryId || item.task.bucket || 'home';
+    const bucket = bucketMap.get(taskBucket) || { name: taskBucket, emoji: '📌', color: '#8E8E8E' };
 
     const row = document.createElement('div');
     row.className = `suggestion-card card ${!item.isChecked ? 'suggestion-unchecked' : ''}`;
@@ -293,14 +412,13 @@ async function renderSuggestionsList() {
       checkbox.innerHTML = item.isChecked ? '✓' : '';
       row.classList.toggle('suggestion-unchecked', !item.isChecked);
       
-      // Update capacity total label
+      // Update planned focus display
       let currentTotal = 0;
       generatedSuggestions.forEach(g => {
-        if (g.isChecked) currentTotal += g.task.estimatedMinutes;
+        if (g.isChecked) currentTotal += (g.task.estimatedMinutes || 30);
       });
-      if (capacitySummary) {
-        capacitySummary.textContent = `${currentTotal}m / ${initialCapacity}m`;
-      }
+      const focusMinEl = document.getElementById('proposal-focus-min');
+      if (focusMinEl) focusMinEl.textContent = `${currentTotal}m`;
     };
 
     checkbox.addEventListener('click', toggleChecked);
@@ -315,7 +433,7 @@ async function renderSuggestionsList() {
     const header = document.createElement('div');
     header.className = 'suggestion-header';
     header.innerHTML = `
-      <span class="suggestion-title">${item.task.name}</span>
+      <span class="suggestion-title">${taskName}</span>
       <span class="chip suggestion-bucket-chip" style="background-color: ${bucket.color}15; color: ${bucket.color}; border-color: ${bucket.color}40; font-size: 0.75rem; padding: 2px 8px;">
         ${bucket.emoji} ${bucket.name}
       </span>
@@ -332,7 +450,7 @@ async function renderSuggestionsList() {
     
     const timeLabel = document.createElement('label');
     timeLabel.className = 'suggestion-field-label';
-    timeLabel.textContent = '🕒 Start Time:';
+    timeLabel.textContent = '🕒 Start:';
     
     const timeInput = document.createElement('input');
     timeInput.type = 'time';
@@ -347,7 +465,6 @@ async function renderSuggestionsList() {
       const val = e.target.value;
       if (val) {
         item.scheduledTime = val;
-        item.isCustomTime = true;
         timeBadge.textContent = formatTime12(val);
       }
     });
@@ -374,7 +491,7 @@ async function renderSuggestionsList() {
     durInput.min = '5';
     durInput.max = '480';
     durInput.step = '5';
-    durInput.value = item.task.estimatedMinutes;
+    durInput.value = item.task.estimatedMinutes || 30;
 
     const durUnit = document.createElement('span');
     durUnit.className = 'duration-unit';
@@ -384,14 +501,12 @@ async function renderSuggestionsList() {
       const val = parseInt(e.target.value, 10);
       if (val && val > 0) {
         item.task.estimatedMinutes = val;
-        
         let currentTotal = 0;
         generatedSuggestions.forEach(g => {
-          if (g.isChecked) currentTotal += g.task.estimatedMinutes;
+          if (g.isChecked) currentTotal += (g.task.estimatedMinutes || 30);
         });
-        if (capacitySummary) {
-          capacitySummary.textContent = `${currentTotal}m / ${initialCapacity}m`;
-        }
+        const focusMinEl = document.getElementById('proposal-focus-min');
+        if (focusMinEl) focusMinEl.textContent = `${currentTotal}m`;
       }
     });
 
@@ -406,10 +521,6 @@ async function renderSuggestionsList() {
 
     container.appendChild(row);
   });
-
-  if (capacitySummary) {
-    capacitySummary.textContent = `${totalScheduledMin}m / ${initialCapacity}m`;
-  }
 
   // Stagger animate suggested cards
   const cards = container.querySelectorAll('.suggestion-card');
@@ -449,22 +560,22 @@ async function showAddMoreModal() {
     item.style.padding = 'var(--spacing-md)';
     item.style.cursor = 'pointer';
 
+    const tName = task.title || task.name || 'Task';
     item.innerHTML = `
       <div>
-        <span style="font-weight:700;display:block;">${task.name}</span>
+        <span style="font-weight:700;display:block;">${tName}</span>
         <span style="font-size:0.75rem;color:var(--text-muted);">⏱️ ${task.estimatedMinutes}m | Priority: ${task.priority}</span>
       </div>
       <button class="btn btn-primary" style="padding:4px 12px;font-size:0.8rem;">Add</button>
     `;
 
     item.addEventListener('click', () => {
-      // Append to suggestions. We'll set start time to end of current suggestions + buffer
       const lastSuggestion = generatedSuggestions[generatedSuggestions.length - 1];
       let scheduledTime = getEffectiveStartTime(prefs.wakeTime || '07:00');
       
       if (lastSuggestion) {
         const [h, m] = lastSuggestion.scheduledTime.split(':').map(Number);
-        const nextMin = h * 60 + m + lastSuggestion.task.estimatedMinutes + bufferMinutes;
+        const nextMin = h * 60 + m + (lastSuggestion.task.estimatedMinutes || 30) + bufferMinutes;
         scheduledTime = formatTime(Math.floor(nextMin / 60) % 24, nextMin % 60);
       }
 
@@ -476,7 +587,7 @@ async function showAddMoreModal() {
 
       closeModal();
       renderSuggestionsList();
-      showToast(`${task.name} added to plan`, 'success');
+      showToast(`${tName} added to plan`, 'success');
     });
 
     content.appendChild(item);

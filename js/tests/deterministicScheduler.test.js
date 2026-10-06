@@ -4,7 +4,8 @@ import {
   parseTimeToMinutes, 
   formatMinutesToTime, 
   validateSchedule, 
-  generateDeterministicSchedule 
+  generateDeterministicSchedule,
+  createScheduleGaps
 } from '../engine/deterministicScheduler.js';
 import { candidateScore, rankCandidateTasks } from '../engine/scoring.js';
 
@@ -82,6 +83,115 @@ describe('Deterministic Scheduling Engine (Spec Section 8)', () => {
     expect(Array.isArray(result.unscheduledTasks)).toBe(true);
     const unscheduledIds = result.unscheduledTasks.map(t => t.id);
     expect(unscheduledIds.includes('t3')).toBe(true);
+  });
+
+  it('should preserve fixed commitments and strictly avoid overlapping them', () => {
+    const tasks = [
+      { id: 't1', title: 'Task Before Meeting', estimatedMinutes: 60, priority: 80, status: 'ready' },
+      { id: 't2', title: 'Task After Meeting', estimatedMinutes: 60, priority: 70, status: 'ready' }
+    ];
+    const fixedCommitments = [
+      { id: 'm1', title: 'Sprint Review', start: '10:00', end: '11:00' }
+    ];
+
+    const result = generateDeterministicSchedule({
+      tasks,
+      startTime: '09:00',
+      endTime: '12:00',
+      fixedCommitments,
+      bufferMinutes: 0
+    });
+
+    const validation = validateSchedule(result.blocks);
+    expect(validation.isValid).toBe(true);
+    expect(validation.hasOverlaps).toBe(false);
+
+    // Verify fixed commitment is present and locked
+    const meetingBlock = result.blocks.find(b => b.id === 'm1' || b.title === 'Sprint Review');
+    expect(Boolean(meetingBlock)).toBe(true);
+    expect(meetingBlock.locked).toBe(true);
+    expect(meetingBlock.start).toBe('10:00');
+    expect(meetingBlock.end).toBe('11:00');
+
+    // Verify task blocks do not overlap with 10:00 - 11:00
+    const taskBlocks = result.blocks.filter(b => b.type === 'task');
+    for (const b of taskBlocks) {
+      const s = parseTimeToMinutes(b.start);
+      const e = parseTimeToMinutes(b.end);
+      const overlapsMeeting = s < 660 && 600 < e;
+      expect(overlapsMeeting).toBe(false);
+    }
+  });
+
+  it('should respect task dependencies and schedule prerequisites first', () => {
+    const tasks = [
+      // Dependent task has higher priority, but depends on t_prereq
+      { id: 't_dep', title: 'Deploy to Prod', estimatedMinutes: 30, priority: 95, dependencies: ['t_prereq'], status: 'ready' },
+      { id: 't_prereq', title: 'Run QA Tests', estimatedMinutes: 30, priority: 50, status: 'ready' }
+    ];
+
+    const result = generateDeterministicSchedule({
+      tasks,
+      availableWindows: [{ start: '09:00', end: '11:00' }],
+      bufferMinutes: 5
+    });
+
+    const validation = validateSchedule(result.blocks);
+    expect(validation.isValid).toBe(true);
+    expect(validation.hasOverlaps).toBe(false);
+
+    const prereqBlock = result.blocks.find(b => b.taskId === 't_prereq');
+    const depBlock = result.blocks.find(b => b.taskId === 't_dep');
+    expect(Boolean(prereqBlock)).toBe(true);
+    expect(Boolean(depBlock)).toBe(true);
+
+    const prereqEnd = parseTimeToMinutes(prereqBlock.end);
+    const depStart = parseTimeToMinutes(depBlock.start);
+    expect(depStart).toBeGreaterThan(prereqEnd - 1);
+  });
+
+  it('should correctly map gaps: buffer for short intervals and open time for long intervals', () => {
+    const placedBlocks = [
+      { id: 'b1', start: '09:00', end: '09:30', type: 'task' },
+      // gap: 09:30 to 09:40 (10 min <= 15 min threshold -> buffer)
+      { id: 'b2', start: '09:40', end: '10:00', type: 'task' },
+      // gap: 10:00 to 11:00 (60 min > 15 min threshold -> open)
+      { id: 'b3', start: '11:00', end: '12:00', type: 'task' }
+    ];
+
+    const gaps = createScheduleGaps(placedBlocks, parseTimeToMinutes('09:00'), parseTimeToMinutes('12:00'), 15);
+    expect(gaps.length).toBe(2);
+
+    const smallGap = gaps.find(g => g.start === '09:30' && g.end === '09:40');
+    expect(Boolean(smallGap)).toBe(true);
+    expect(smallGap.type).toBe('buffer');
+
+    const largeGap = gaps.find(g => g.start === '10:00' && g.end === '11:00');
+    expect(Boolean(largeGap)).toBe(true);
+    expect(largeGap.type).toBe('open');
+    expect(largeGap.title).toBe('Open Time');
+  });
+
+  it('should gracefully handle empty task lists and zero capacity', () => {
+    const emptyResult = generateDeterministicSchedule({
+      tasks: [],
+      availableWindows: [{ start: '09:00', end: '12:00' }]
+    });
+
+    expect(emptyResult.status).toBe('draft');
+    expect(emptyResult.scheduledTasks.length).toBe(0);
+    expect(emptyResult.unscheduledTasks.length).toBe(0);
+    expect(emptyResult.isValid).toBe(true);
+    expect(emptyResult.hasOverlaps).toBe(false);
+
+    const zeroCapacityResult = generateDeterministicSchedule({
+      tasks: [{ id: 't1', title: 'Task', estimatedMinutes: 30, priority: 50, status: 'ready' }],
+      capacity: 0
+    });
+
+    expect(zeroCapacityResult.scheduledTasks.length).toBe(0);
+    expect(zeroCapacityResult.unscheduledTasks.length).toBe(1);
+    expect(zeroCapacityResult.unscheduledTasks[0].status).toBe('ready');
   });
 
 });
