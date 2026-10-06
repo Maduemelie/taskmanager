@@ -361,23 +361,39 @@ export async function renderTodayView() {
           const gapEndM = startMin % 60;
           const gapTimeStr = `${formatTime12(gapStartH, gapStartM)} – ${formatTime12(gapEndH, gapEndM)}`;
           
-          const isLunch = gap >= 40 && gapStartH >= 11 && gapStartH <= 14;
-          const icon = isLunch ? '🥗' : '☕';
-          const label = isLunch ? 'Lunch & Recharge' : `${gap}m Rest Buffer`;
+          let blockClass = 'timeline-block-buffer';
+          let icon = '🛡️';
+          let label = `${gap}m Buffer`;
 
+          if (gap >= 90) {
+            // Open Time (Section 6.4)
+            blockClass = 'timeline-block-open';
+            icon = '🕒';
+            const h = Math.floor(gap / 60);
+            const m = gap % 60;
+            label = `Open Time (${h}h ${m > 0 ? m + 'm' : ''})`;
+          } else if (gap >= 25) {
+            // Intentional Rest Break (Section 6.4)
+            blockClass = 'timeline-block-break';
+            const isLunch = gap >= 40 && gapStartH >= 11 && gapStartH <= 14;
+            icon = isLunch ? '🥗' : '☕';
+            label = isLunch ? 'Lunch & Recharge' : `${gap}m Rest Break`;
+          }
+
+          bufferDiv.className = `timeline-buffer ${blockClass}`;
           bufferDiv.innerHTML = `
-            <div class="buffer-dot"></div>
-            <div class="buffer-content-wrapper" style="width: 100%;">
-              <div class="buffer-header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <span class="buffer-badge" style="font-size: 0.85rem; font-weight: 700; color: var(--accent-color);">${icon} ${label}</span>
-                <span class="buffer-time-range" style="font-size: 0.72rem; color: var(--text-muted); font-weight: 700;">${gapTimeStr}</span>
+            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1rem;">${icon}</span>
+                <span style="font-weight: 700; font-size: 0.82rem;">${label}</span>
+                <span style="font-size: 0.72rem; color: var(--text-muted); font-weight: 600;">(${gapTimeStr})</span>
               </div>
-              <div class="buffer-actions-row" style="display: flex; gap: 8px;">
-                <button type="button" class="btn btn-ghost btn-quick-task" style="flex: 1; font-size: 0.75rem; padding: 6px; border: 1px solid var(--border-color); background: var(--surface-color);" title="Insert a small task into this break">
+              <div style="display: flex; gap: 6px;">
+                <button type="button" class="btn btn-ghost btn-quick-task" style="padding: 3px 8px; font-size: 0.72rem; border: 1px solid var(--border-color); background: var(--surface-color); border-radius: var(--radius-sm);" title="Add quick task">
                   + Quick Task
                 </button>
-                <button type="button" class="btn btn-ghost btn-pull-next" style="flex: 1; font-size: 0.75rem; padding: 6px; border: 1px solid var(--border-color); background: var(--surface-color);" title="Start your next task ahead of schedule">
-                  ⏭️ Pull Next Task
+                <button type="button" class="btn btn-ghost btn-pull-next" style="padding: 3px 8px; font-size: 0.72rem; border: 1px solid var(--border-color); background: var(--surface-color); border-radius: var(--radius-sm);" title="Pull next task">
+                  ⏭️ Pull Next
                 </button>
               </div>
             </div>
@@ -543,14 +559,23 @@ export async function renderTodayView() {
   const totalPlannedMinutes = activeSlots.reduce((sum, t) => sum + (t.estimatedMinutes || 0), 0);
   const completedFocusMinutes = completedSlots.reduce((sum, t) => sum + (t.actualMinutes || t.estimatedMinutes || 0), 0);
 
+  const totalWeightedPriority = activeSlots.reduce((sum, t) => sum + ((t.priority || 50) * (t.estimatedMinutes || 30)), 0);
+  const completedWeightedPriority = completedSlots.reduce((sum, t) => sum + ((t.priority || 50) * (t.actualMinutes || t.estimatedMinutes || 30)), 0);
+  const priorityCoverage = totalWeightedPriority > 0 ? Math.round((completedWeightedPriority / totalWeightedPriority) * 100) : 0;
+
   const percentage = totalPlannedMinutes > 0 
     ? Math.min(100, Math.round((completedFocusMinutes / totalPlannedMinutes) * 100))
     : 0;
 
   if (progressText) progressText.textContent = `${percentage}%`;
   
+  const flowMinutesEl = document.getElementById('daily-flow-minutes');
+  if (flowMinutesEl) flowMinutesEl.textContent = `${completedFocusMinutes}m / ${totalPlannedMinutes}m focus`;
+  const flowCoverageEl = document.getElementById('daily-flow-coverage');
+  if (flowCoverageEl) flowCoverageEl.textContent = `Priority: ${priorityCoverage}%`;
+
   if (ringFill) {
-    const circumference = 113.1;
+    const circumference = 125.6;
     const offset = circumference - (circumference * percentage) / 100;
     ringFill.style.strokeDashoffset = offset;
     
@@ -567,7 +592,10 @@ export async function renderTodayView() {
     }
   }
 
-  if (progressCount) progressCount.textContent = `${completedFocusMinutes}m / ${totalPlannedMinutes}m focus`;
+  if (progressCount) progressCount.textContent = `${completedTasks}/${totalTasks} done`;
+
+  // Render Section 6.3 NOW Card
+  renderNowCard(activeSlots, taskMap, currentMin);
 
   // Trigger fullscreen confetti if all done!
   if (totalTasks > 0 && completedTasks === totalTasks) {
@@ -576,6 +604,158 @@ export async function renderTodayView() {
 
   // 6.3.3 Check for Schedule Slippage
   checkScheduleSlippage();
+}
+
+/**
+ * Renders the Section 6.3 NOW Card into #today-now-card-container.
+ */
+function renderNowCard(activeSlots, taskMap, currentMin) {
+  const container = document.getElementById('today-now-card-container');
+  if (!container) return;
+
+  if (!activeSlots || activeSlots.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  // 1. Check for a task currently within its active time window
+  let nowSlot = activeSlots.find(s => {
+    const [h, m] = s.scheduledTime.split(':').map(Number);
+    const start = h * 60 + m;
+    const end = start + (s.estimatedMinutes || 30);
+    return currentMin >= start && currentMin < end && s.status !== 'completed' && s.status !== 'skipped';
+  });
+
+  // 2. If no task currently inside its window, find an in-progress task
+  if (!nowSlot) {
+    nowSlot = activeSlots.find(s => s.status === 'in-progress');
+  }
+
+  // 3. Fallback: find the next upcoming pending task
+  let isUpcoming = false;
+  if (!nowSlot) {
+    nowSlot = activeSlots.find(s => s.status === 'pending');
+    if (nowSlot) isUpcoming = true;
+  }
+
+  // 4. If all tasks are completed / skipped:
+  if (!nowSlot) {
+    const allCompleted = activeSlots.every(s => s.status === 'completed' || s.status === 'skipped');
+    if (allCompleted) {
+      container.innerHTML = `
+        <div class="now-card" style="border-color: var(--secondary-color); background: rgba(94, 149, 96, 0.08);">
+          <div class="now-header">
+            <span class="now-tag" style="background: var(--secondary-color);">🎉 DAY WRAP-UP</span>
+          </div>
+          <div class="now-title">All tasks completed!</div>
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin: 4px 0 0 0;">
+            Great execution today. Time to relax and recharge.
+          </p>
+        </div>
+      `;
+    } else {
+      container.innerHTML = '';
+    }
+    return;
+  }
+
+  const [h, m] = nowSlot.scheduledTime.split(':').map(Number);
+  const startMin = h * 60 + m;
+  const duration = nowSlot.estimatedMinutes || 30;
+  const endMin = startMin + duration;
+  const endH = Math.floor(endMin / 60) % 24;
+  const endM = endMin % 60;
+  const timeRangeStr = `${formatTime12(h, m)} – ${formatTime12(endH, endM)}`;
+
+  const taskDetail = taskMap.get(nowSlot.taskId) || {
+    name: nowSlot.name || nowSlot.title || 'Focus Task',
+    title: nowSlot.name || nowSlot.title || 'Focus Task',
+    bucket: nowSlot.bucket || 'work'
+  };
+  const taskTitle = taskDetail.title || taskDetail.name || 'Focus Task';
+
+  const remainingMin = Math.max(0, endMin - currentMin);
+  const elapsedMin = Math.max(0, currentMin - startMin);
+  const progressPct = isUpcoming ? 0 : Math.min(100, Math.max(5, Math.round((elapsedMin / duration) * 100)));
+
+  const tagHtml = isUpcoming
+    ? `<span class="now-tag" style="background: var(--text-muted);">UPCOMING NEXT</span>`
+    : `<span class="now-tag"><span class="now-pulse-dot"></span> NOW</span>`;
+
+  const remainingText = isUpcoming
+    ? `Starts in ${Math.max(0, startMin - currentMin)}m (${duration}m planned)`
+    : `${remainingMin}m remaining`;
+
+  container.innerHTML = `
+    <div class="now-card">
+      <div class="now-header">
+        ${tagHtml}
+        <span class="now-time-range">${timeRangeStr}</span>
+      </div>
+      <div class="now-title">${taskTitle}</div>
+      <div class="now-progress-track">
+        <div class="now-progress-fill" style="width: ${progressPct}%;"></div>
+      </div>
+      <div class="now-meta-row">
+        <span>${remainingText}</span>
+        <span style="text-transform: capitalize;">${nowSlot.status}</span>
+      </div>
+      <div class="now-actions">
+        ${isUpcoming ? `
+          <button type="button" class="now-btn now-btn-primary btn-now-start">
+            ⚡ Start Now
+          </button>
+        ` : `
+          <button type="button" class="now-btn now-btn-primary btn-now-done">
+            ✅ Complete
+          </button>
+          <button type="button" class="now-btn now-btn-secondary btn-now-plus15">
+            +15m
+          </button>
+          <button type="button" class="now-btn now-btn-secondary btn-now-skip">
+            ⏭️ Skip
+          </button>
+        `}
+      </div>
+    </div>
+  `;
+
+  // Wire buttons
+  const startBtn = container.querySelector('.btn-now-start');
+  if (startBtn) {
+    startBtn.addEventListener('click', async () => {
+      triggerHaptic(10);
+      await markTaskStatus(activePlan.id, nowSlot.taskId, 'in-progress');
+      showToast('Focus session started! ⚡', 'info');
+      renderTodayView();
+    });
+  }
+
+  const doneBtn = container.querySelector('.btn-now-done');
+  if (doneBtn) {
+    doneBtn.addEventListener('click', () => {
+      showCompletionMinutesModal(nowSlot.taskId, nowSlot.estimatedMinutes, nowSlot, taskDetail);
+    });
+  }
+
+  const plus15Btn = container.querySelector('.btn-now-plus15');
+  if (plus15Btn) {
+    plus15Btn.addEventListener('click', async () => {
+      nowSlot.estimatedMinutes = (nowSlot.estimatedMinutes || 30) + 15;
+      await updatePlan(activePlan.id, { plannedTasks: activePlan.plannedTasks });
+      showToast('Added 15 minutes ⏱️', 'info');
+      renderTodayView();
+    });
+  }
+
+  const skipBtn = container.querySelector('.btn-now-skip');
+  if (skipBtn) {
+    skipBtn.addEventListener('click', async () => {
+      await markTaskStatus(activePlan.id, nowSlot.taskId, 'skipped');
+      showToast('Task skipped', 'info');
+      renderTodayView();
+    });
+  }
 }
 
 /**
