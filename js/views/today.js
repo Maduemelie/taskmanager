@@ -5,7 +5,14 @@ import { getPreferences } from '../models/preferences.js';
 import { renderTimeSlot } from '../components/timeSlot.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
-import { addUnplannedTask, rescheduleRemaining, suggestDeferrals, applyDeferrals } from '../engine/reschedule.js';
+import { 
+  addUnplannedTask, 
+  rescheduleRemaining, 
+  suggestDeferrals, 
+  applyDeferrals,
+  evaluateReplanTrigger,
+  replanRemainingDay
+} from '../engine/reschedule.js';
 import { today, formatTime, formatTime12 } from '../utils/date.js';
 import { stagger, slideUp, popEffect } from '../utils/animate.js';
 import { triggerHaptic } from '../utils/haptics.js';
@@ -201,36 +208,104 @@ async function handleReplanRequest() {
 }
 
 /**
- * Auto-cascades all pending tasks forward starting from the current time,
- * preserving completed/in-progress tasks and respecting buffer preferences.
+ * Auto-cascades or rebalances pending tasks using Section 9 adaptive replanning engine.
  */
 async function autoCascadeSchedule() {
   if (!activePlan) return;
 
   const prefs = await getPreferences();
-  const bufferMin = prefs.bufferMinutes || 10;
+  const allTasks = await getAllTasks();
   const now = new Date();
-  let currentMin = now.getHours() * 60 + now.getMinutes();
+  const currentTimeStr = formatTime(now.getHours(), now.getMinutes());
 
-  // Round up to the next 5-minute boundary
-  currentMin = Math.ceil(currentMin / 5) * 5;
-
-  // Sort pending tasks by their original scheduled time
-  const pendingTasks = activePlan.plannedTasks
-    .filter(t => t.status === 'pending')
-    .sort((a, b) => a.scheduledTime.localeCompare(b.scheduledTime));
-
-  // Reassign times sequentially from now
-  pendingTasks.forEach(task => {
-    const h = Math.floor(currentMin / 60) % 24;
-    const m = currentMin % 60;
-    task.scheduledTime = formatTime(h, m);
-    currentMin += (task.estimatedMinutes || 30) + bufferMin;
+  const replanResult = replanRemainingDay({
+    plan: activePlan,
+    currentTime: currentTimeStr,
+    dayEndTime: prefs.workHoursEnd || '22:00',
+    bufferMinutes: prefs.bufferMinutes || 10,
+    allTasks,
+    preferences: prefs
   });
 
-  await updatePlan(activePlan.id, { plannedTasks: activePlan.plannedTasks });
-  triggerHaptic(15);
-  await renderTodayView();
+  if (replanResult.type === 'cascade') {
+    await updatePlan(activePlan.id, { plannedTasks: replanResult.updatedPlan.plannedTasks });
+    triggerHaptic(15);
+    await renderTodayView();
+    showToast('Schedule re-aligned to current time! ⚡', 'success');
+  } else if (replanResult.type === 'rebalance') {
+    showRebalanceDiffModal(replanResult);
+  }
+}
+
+/**
+ * Presents the interactive rebalance proposal modal per Section 9.3
+ */
+function showRebalanceDiffModal(replanResult) {
+  const { keptTasks, deferredTasks, remainingCapacity, neededMinutes, updatedPlan } = replanResult;
+  const modalContent = document.createElement('div');
+  modalContent.className = 'rebalance-diff-modal';
+  
+  const keptListHtml = keptTasks.map(t => `
+    <li style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--border-color);">
+      <div>
+        <span style="font-weight:600; font-size:0.9rem;">${t.name || t.title || 'Task'}</span>
+        <span style="color:var(--text-muted); font-size:0.75rem; margin-left:6px;">(${t.estimatedMinutes}m)</span>
+      </div>
+      <span class="badge" style="background:rgba(91,140,90,0.15); color:var(--secondary-color); font-weight:700; font-size:0.75rem; padding:2px 8px; border-radius:4px;">
+        ${t.scheduledTime}
+      </span>
+    </li>
+  `).join('');
+
+  const deferredListHtml = deferredTasks.map(t => `
+    <li style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--border-color);">
+      <div>
+        <span style="font-weight:600; font-size:0.9rem;">${t.name || 'Task'}</span>
+        <span style="color:var(--text-muted); font-size:0.75rem; margin-left:6px;">(${t.estimatedMinutes}m)</span>
+      </div>
+      <span class="badge" style="background:rgba(232,112,58,0.15); color:var(--primary-color); font-weight:700; font-size:0.75rem; padding:2px 8px; border-radius:4px;">
+        Defer to Bucket
+      </span>
+    </li>
+  `).join('');
+
+  modalContent.innerHTML = `
+    <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:var(--spacing-md);">
+      Remaining tasks need <strong>${neededMinutes}m</strong>, but only <strong>${remainingCapacity}m</strong> remain in today's window. 
+      To prevent overload, lower priority items are recommended for deferral.
+    </p>
+
+    <div style="margin-bottom:var(--spacing-md);">
+      <h5 style="font-size:0.85rem; font-weight:800; text-transform:uppercase; color:var(--secondary-color); margin-bottom:4px;">
+        ✅ Kept for Today (${keptTasks.length})
+      </h5>
+      <ul style="list-style:none; padding:0; margin:0;">${keptListHtml}</ul>
+    </div>
+
+    ${deferredTasks.length > 0 ? `
+    <div style="margin-bottom:var(--spacing-lg);">
+      <h5 style="font-size:0.85rem; font-weight:800; text-transform:uppercase; color:var(--primary-color); margin-bottom:4px;">
+        📦 Defer to Backlog (${deferredTasks.length})
+      </h5>
+      <ul style="list-style:none; padding:0; margin:0;">${deferredListHtml}</ul>
+    </div>` : ''}
+
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button id="rebalance-cancel-btn" class="btn btn-ghost">Cancel</button>
+      <button id="rebalance-confirm-btn" class="btn btn-primary">Apply Recommendations</button>
+    </div>
+  `;
+
+  openModal('Adaptive Rebalance Proposal', modalContent);
+
+  document.getElementById('rebalance-cancel-btn')?.addEventListener('click', closeModal);
+  document.getElementById('rebalance-confirm-btn')?.addEventListener('click', async () => {
+    closeModal();
+    await updatePlan(activePlan.id, { plannedTasks: updatedPlan.plannedTasks });
+    triggerHaptic(15);
+    await renderTodayView();
+    showToast(`${deferredTasks.length} task(s) deferred, schedule optimized! ⚡`, 'success');
+  });
 }
 
 /**
@@ -1148,32 +1223,21 @@ function checkScheduleSlippage() {
   const now = new Date();
   const currentMin = now.getHours() * 60 + now.getMinutes();
 
-  // Find the earliest incomplete task whose scheduled end time has passed
-  const overdueTasks = activePlan.plannedTasks.filter(t => {
-    if (t.status === 'completed' || t.status === 'skipped') return false;
-    const [h, m] = t.scheduledTime.split(':').map(Number);
-    const endMin = h * 60 + m + t.estimatedMinutes;
-    return currentMin > endMin;
+  const inProgressTask = activePlan.plannedTasks.find(t => t.status === 'in-progress');
+  const triggerCheck = evaluateReplanTrigger({
+    plan: activePlan,
+    currentTime: formatTime(now.getHours(), now.getMinutes()),
+    activeTask: inProgressTask
   });
 
-  if (overdueTasks.length === 0) {
-    hideSlippageBanner();
-    return;
-  }
-
-  const latestOverrun = overdueTasks[overdueTasks.length - 1];
-  const [h, m] = latestOverrun.scheduledTime.split(':').map(Number);
-  const scheduledEnd = h * 60 + m + latestOverrun.estimatedMinutes;
-  const slippageMinutes = currentMin - scheduledEnd;
-
-  if (slippageMinutes >= 15) {
-    showSlippageBanner(slippageMinutes);
+  if (triggerCheck.shouldReplan) {
+    showSlippageBanner(triggerCheck.diffMinutes, triggerCheck.reason);
   } else {
     hideSlippageBanner();
   }
 }
 
-function showSlippageBanner(minutes) {
+function showSlippageBanner(minutes, reason) {
   let banner = document.getElementById('slippage-banner');
   if (!banner) {
     banner = document.createElement('div');
@@ -1187,10 +1251,12 @@ function showSlippageBanner(minutes) {
     }
   }
 
+  const message = reason || `Behind schedule by <strong>${minutes}m</strong>`;
+
   banner.innerHTML = `
     <div style="display:flex; align-items:center; gap:8px;">
       <span>⚡</span>
-      <span style="font-size:0.85rem; font-weight:500;">Behind schedule by <strong>${minutes}m</strong></span>
+      <span style="font-size:0.85rem; font-weight:500;">${message}</span>
     </div>
     <div style="display:flex; gap:8px;">
       <button id="banner-realign-btn" class="btn btn-sm" style="background:rgba(255,255,255,0.2); color:#fff; border:none; padding:4px 8px; font-size:0.75rem; border-radius:var(--radius-sm); cursor:pointer;">Auto-Align</button>

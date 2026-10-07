@@ -7,7 +7,7 @@ import {
   generateDeterministicSchedule,
   createScheduleGaps
 } from '../engine/deterministicScheduler.js';
-import { candidateScore, rankCandidateTasks } from '../engine/scoring.js';
+import { candidateScore, rankCandidateTasks, parseDeadline } from '../engine/scoring.js';
 
 describe('Deterministic Scheduling Engine (Spec Section 8)', () => {
 
@@ -192,6 +192,153 @@ describe('Deterministic Scheduling Engine (Spec Section 8)', () => {
     expect(zeroCapacityResult.scheduledTasks.length).toBe(0);
     expect(zeroCapacityResult.unscheduledTasks.length).toBe(1);
     expect(zeroCapacityResult.unscheduledTasks[0].status).toBe('ready');
+  });
+
+  it('should handle time-only and future-day deadlines accurately', () => {
+    // 1. Time-only deadline defaults to today and allows scheduling if completing before deadline
+    const taskTimeDeadline = {
+      id: 'td1',
+      title: 'Submit Today By 3pm',
+      estimatedMinutes: 60,
+      priority: 80,
+      deadline: '15:00',
+      status: 'ready'
+    };
+    
+    // 2. Future-day deadline (tomorrow 14:00) should be schedulable today past 14:00
+    const taskFutureDeadline = {
+      id: 'td2',
+      title: 'Due Tomorrow Afternoon',
+      estimatedMinutes: 60,
+      priority: 75,
+      deadline: '2026-10-07T14:00',
+      status: 'ready'
+    };
+
+    // 3. Past-hour deadline today should be rejected
+    const taskPastDeadlineToday = {
+      id: 'td3',
+      title: 'Due Earlier Today',
+      estimatedMinutes: 60,
+      priority: 90,
+      deadline: '10:00',
+      status: 'ready'
+    };
+
+    const result = generateDeterministicSchedule({
+      date: '2026-10-06',
+      tasks: [taskTimeDeadline, taskFutureDeadline, taskPastDeadlineToday],
+      availableWindows: [{ start: '13:00', end: '17:00' }],
+      minBufferMinutes: 0
+    });
+
+    expect(result.isValid).toBe(true);
+    expect(result.hasOverlaps).toBe(false);
+
+    const scheduledIds = result.scheduledTasks.map(t => t.id);
+    expect(scheduledIds.includes('td1')).toBe(true); // 13:00-14:00 completes before 15:00
+    expect(scheduledIds.includes('td2')).toBe(true); // 14:00-15:00 completes today before tomorrow 14:00
+    expect(scheduledIds.includes('td3')).toBe(false); // cannot fit before 10:00 when window starts at 13:00
+
+    // Check parseDeadline helper
+    const parsedTime = parseDeadline('15:00', '2026-10-06');
+    expect(parsedTime.date).toBe('2026-10-06');
+    expect(parsedTime.time).toBe('15:00');
+    expect(parsedTime.hasTime).toBe(true);
+
+    const parsedFuture = parseDeadline('2026-10-07T14:00', '2026-10-06');
+    expect(parsedFuture.date).toBe('2026-10-07');
+    expect(parsedFuture.time).toBe('14:00');
+  });
+
+  it('should carve custom available windows around fixed commitments preventing overlaps', () => {
+    const tasks = [
+      { id: 't1', title: 'Task 1', estimatedMinutes: 60, priority: 80, status: 'ready' },
+      { id: 't2', title: 'Task 2', estimatedMinutes: 60, priority: 70, status: 'ready' },
+      { id: 't3', title: 'Task 3', estimatedMinutes: 60, priority: 60, status: 'ready' }
+    ];
+
+    const fixedCommitments = [
+      { id: 'fc1', title: 'Dentist Appointment', start: '10:00', end: '11:00' }
+    ];
+
+    const result = generateDeterministicSchedule({
+      tasks,
+      availableWindows: [{ start: '09:00', end: '13:00' }],
+      fixedCommitments,
+      bufferMinutes: 0
+    });
+
+    const validation = validateSchedule(result.blocks);
+    expect(validation.isValid).toBe(true);
+    expect(validation.hasOverlaps).toBe(false);
+
+    // Verify fixed commitment is present and locked
+    const fcBlock = result.blocks.find(b => b.id === 'fc1');
+    expect(Boolean(fcBlock)).toBe(true);
+    expect(fcBlock.locked).toBe(true);
+
+    // Verify tasks do not overlap 10:00 - 11:00
+    const taskBlocks = result.blocks.filter(b => b.type === 'task');
+    for (const b of taskBlocks) {
+      const s = parseTimeToMinutes(b.start);
+      const e = parseTimeToMinutes(b.end);
+      const overlaps = s < 660 && 600 < e;
+      expect(overlaps).toBe(false);
+    }
+  });
+
+  it('should re-verify constraints after break insertion when continuous focus limit is reached', () => {
+    // Task A: 60m focus. Max focus block is 60m.
+    // Task B: 30m, but has latestStart: '10:05'.
+    // Window: 09:00 to 12:00.
+    // At 10:00, Task A ends. Task B would exceed maxFocusBlockMinutes, so 15m break is inserted (10:00 - 10:15).
+    // At 10:15, Task B cannot start because 10:15 > latestStart '10:05'!
+    // Task B must NOT be scheduled at 10:15.
+    const tasks = [
+      { id: 'tA', title: 'Deep Work A', estimatedMinutes: 60, priority: 90, status: 'ready' },
+      { id: 'tB', title: 'Tight Start Task', estimatedMinutes: 30, priority: 85, latestStart: '10:05', status: 'ready' }
+    ];
+
+    const result = generateDeterministicSchedule({
+      tasks,
+      availableWindows: [{ start: '09:00', end: '12:00' }],
+      maxFocusBlockMinutes: 60,
+      bufferMinutes: 0
+    });
+
+    expect(result.isValid).toBe(true);
+    expect(result.hasOverlaps).toBe(false);
+
+    const taskBBlock = result.blocks.find(b => b.taskId === 'tB');
+    expect(Boolean(taskBBlock)).toBe(false); // Task B was not placed illegally after 10:05
+
+    const unscheduledIds = result.unscheduledTasks.map(t => t.id);
+    expect(unscheduledIds.includes('tB')).toBe(true);
+  });
+
+  it('should support options.capacityMinutes and return proposal metrics', () => {
+    const tasks = [
+      { id: 't1', title: 'Task 1', estimatedMinutes: 60, priority: 100, status: 'ready' },
+      { id: 't2', title: 'Task 2', estimatedMinutes: 30, priority: 50, status: 'ready' }
+    ];
+
+    const result = generateDeterministicSchedule({
+      tasks,
+      availableWindows: [{ start: '09:00', end: '15:00' }],
+      capacityMinutes: 90,
+      bufferMinutes: 0
+    });
+
+    expect(result.capacity).toBe(90);
+    expect(result.capacityMinutes).toBe(90);
+    expect(result.plannedFocusMinutes).toBe(90);
+
+    // Verify metrics object for planDay.js interoperability
+    expect(Boolean(result.metrics)).toBe(true);
+    expect(result.metrics.plannedFocusMinutes).toBe(90);
+    expect(result.metrics.utilization).toBe(1);
+    expect(result.metrics.priorityCoverage).toBe(1);
   });
 
 });

@@ -1,7 +1,7 @@
 /* js/engine/deterministicScheduler.js */
 import { generateId } from '../utils/id.js';
 import { today, formatTime } from '../utils/date.js';
-import { candidateScore, rankCandidateTasks } from './scoring.js';
+import { candidateScore, rankCandidateTasks, parseDeadline } from './scoring.js';
 
 /**
  * Converts a 24-hour time string ("HH:MM" or ISO string) to minutes from midnight (0 - 1439).
@@ -232,7 +232,7 @@ export function generateDeterministicSchedule(options = {}) {
       : (typeof options.preferences?.bufferMinutes === 'number' ? options.preferences.bufferMinutes : 10));
 
   const maxFocusBlockMinutes = options.maxFocusBlockMinutes || 120;
-  const energyWindow = options.energyProfile || options.energyWindow || 'medium';
+  const energyWindow = options.energyProfile || options.energyWindow || options.energyLevel || 'medium';
 
   // 1. Process and normalize Fixed Commitments (Hard Constraint Section 8.1)
   const rawCommitments = Array.isArray(options.fixedCommitments) ? options.fixedCommitments : [];
@@ -273,37 +273,61 @@ export function generateDeterministicSchedule(options = {}) {
   fixedBlocks.sort((a, b) => a.startMin - b.endMin);
 
   // 2. Build Free Availability Windows (Section 5.3 & 8.1)
-  let freeWindows = [];
+  let baseWindows = [];
   if (Array.isArray(options.availableWindows) && options.availableWindows.length > 0) {
-    freeWindows = options.availableWindows.map(w => ({
+    baseWindows = options.availableWindows.map(w => ({
       startMin: parseTimeToMinutes(w.start),
       endMin: parseTimeToMinutes(w.end)
     })).filter(w => w.endMin > w.startMin);
   } else {
-    // Carve free windows around fixed commitments
-    let windowCursor = dayStartMin;
-    for (const fb of fixedBlocks) {
-      if (fb.startMin > windowCursor) {
-        freeWindows.push({
-          startMin: windowCursor,
-          endMin: fb.startMin,
-          duration: fb.startMin - windowCursor
-        });
-      }
-      windowCursor = Math.max(windowCursor, fb.endMin);
-    }
-    if (windowCursor < effectiveDayEndMin) {
-      freeWindows.push({
-        startMin: windowCursor,
-        endMin: effectiveDayEndMin,
-        duration: effectiveDayEndMin - windowCursor
-      });
-    }
+    baseWindows = [{ startMin: dayStartMin, endMin: effectiveDayEndMin }];
   }
+
+  // Carve base windows around fixed commitments
+  let freeWindows = [];
+  for (const bw of baseWindows) {
+    let windowPieces = [bw];
+    for (const fb of fixedBlocks) {
+      const nextPieces = [];
+      for (const piece of windowPieces) {
+        // If piece does not overlap fb
+        if (fb.endMin <= piece.startMin || fb.startMin >= piece.endMin) {
+          nextPieces.push(piece);
+        } else {
+          // Left piece before fb
+          if (piece.startMin < fb.startMin) {
+            nextPieces.push({
+              startMin: piece.startMin,
+              endMin: Math.min(piece.endMin, fb.startMin)
+            });
+          }
+          // Right piece after fb
+          if (piece.endMin > fb.endMin) {
+            nextPieces.push({
+              startMin: Math.max(piece.startMin, fb.endMin),
+              endMin: piece.endMin
+            });
+          }
+        }
+      }
+      windowPieces = nextPieces;
+    }
+    freeWindows.push(...windowPieces);
+  }
+
+  freeWindows = freeWindows
+    .filter(w => w.endMin > w.startMin)
+    .sort((a, b) => a.startMin - b.startMin)
+    .map(w => ({
+      ...w,
+      duration: w.endMin - w.startMin
+    }));
 
   // 3. Determine Focus Capacity Limit
   const totalFreeAvailableMinutes = freeWindows.reduce((sum, w) => sum + (w.endMin - w.startMin), 0);
-  const userCapacity = typeof options.capacity === 'number' ? options.capacity : totalFreeAvailableMinutes;
+  const userCapacity = typeof options.capacity === 'number'
+    ? options.capacity
+    : (typeof options.capacityMinutes === 'number' ? options.capacityMinutes : totalFreeAvailableMinutes);
   const capacity = Math.max(0, Math.min(totalFreeAvailableMinutes, userCapacity));
   let remainingCapacity = capacity;
 
@@ -411,19 +435,18 @@ export function generateDeterministicSchedule(options = {}) {
 
         // Hard Constraint: Deadlines (Section 8.1)
         if (task.deadline) {
-          const deadlineStr = task.deadline.split('T')[0];
-          // If deadline is for a past date, cannot be placed
-          if (deadlineStr < date) {
-            continue;
-          }
-          // If deadline has a specific time today, task must complete on or before it
-          if (task.deadline.includes(':') || task.deadline.includes('T')) {
-            const timePart = task.deadline.includes('T')
-              ? task.deadline.split('T')[1].substring(0, 5)
-              : task.deadline;
-            const deadlineMin = parseTimeToMinutes(timePart);
-            if (candEnd > deadlineMin) {
-              continue; // Violates deadline
+          const parsed = parseDeadline(task.deadline, date);
+          if (parsed) {
+            // If deadline is for a past date, cannot be placed
+            if (parsed.date < date) {
+              continue;
+            }
+            // If deadline is today and has a specific time, task must complete on or before it
+            if (parsed.date === date && parsed.hasTime) {
+              const deadlineMin = parseTimeToMinutes(parsed.time);
+              if (candEnd > deadlineMin) {
+                continue; // Violates deadline today
+              }
             }
           }
         }
@@ -487,6 +510,7 @@ export function generateDeterministicSchedule(options = {}) {
           title: gapTitle
         });
         currentMin = selected.effectiveStart;
+        continuousFocusMinutes = 0;
       }
 
       // Hard Constraint: Max Focus Block Limit (Section 8.1)
@@ -507,9 +531,25 @@ export function generateDeterministicSchedule(options = {}) {
           currentMin += breakDuration;
           continuousFocusMinutes = 0;
 
-          // Re-verify if task still fits after break
+          // Re-verify if task still fits window bounds after break
           if (currentMin + selected.duration > windowEndMin) {
             continue;
+          }
+
+          // Re-verify latestStart constraint after break
+          if (task.latestStart && currentMin > parseTimeToMinutes(task.latestStart)) {
+            continue;
+          }
+
+          // Re-verify deadline constraint after break
+          if (task.deadline) {
+            const parsedDeadline = parseDeadline(task.deadline, date);
+            if (parsedDeadline && parsedDeadline.date === date && parsedDeadline.hasTime) {
+              const deadlineMin = parseTimeToMinutes(parsedDeadline.time);
+              if (currentMin + selected.duration > deadlineMin) {
+                continue;
+              }
+            }
           }
         }
       }
@@ -609,6 +649,21 @@ export function generateDeterministicSchedule(options = {}) {
     if (b.type === 'open') totalOpenMinutes += dur;
   }
 
+  const plannedFocusMinutes = plannedTaskMinutes;
+  const utilization = capacity > 0 ? Math.min(1, Number((plannedFocusMinutes / capacity).toFixed(4))) : 0;
+
+  const totalEligiblePriority = eligibleTasks.reduce((sum, t) => sum + (typeof t.priority === 'number' ? t.priority : 50), 0);
+  const scheduledPriority = scheduledTasks.reduce((sum, t) => sum + (typeof t.priority === 'number' ? t.priority : 50), 0);
+  const priorityCoverage = totalEligiblePriority > 0
+    ? Math.min(1, Number((scheduledPriority / totalEligiblePriority).toFixed(4)))
+    : (eligibleTasks.length === 0 ? 1 : 0);
+
+  const metrics = {
+    plannedFocusMinutes,
+    utilization,
+    priorityCoverage
+  };
+
   return {
     id: planId,
     userId: options.userId || 'user_default',
@@ -619,13 +674,15 @@ export function generateDeterministicSchedule(options = {}) {
     blocks: allBlocks,
     scheduledTasks,
     unscheduledTasks,
-    plannedFocusMinutes: plannedTaskMinutes,
-    plannedTaskMinutes: plannedTaskMinutes,
+    plannedFocusMinutes,
+    plannedTaskMinutes: plannedFocusMinutes,
     totalBufferMinutes,
     totalOpenMinutes,
     totalCommitmentMinutes,
     capacity,
-    remainingCapacity: Math.max(0, capacity - plannedTaskMinutes),
+    capacityMinutes: capacity,
+    remainingCapacity: Math.max(0, capacity - plannedFocusMinutes),
+    metrics,
     hasOverlaps: validation.hasOverlaps, // Strictly false
     isValid: validation.isValid,
     isFeasible: unscheduledTasks.length === 0 || remainingCapacity === 0,

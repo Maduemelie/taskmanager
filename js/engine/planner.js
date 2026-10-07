@@ -4,7 +4,7 @@ import { isTaskDueOn } from './recurrence.js';
 import { today, formatTime, isToday } from '../utils/date.js';
 
 export { generateDeterministicSchedule, scheduleDay, validateSchedule, parseTimeToMinutes, formatMinutesToTime, createScheduleGaps } from './deterministicScheduler.js';
-export { candidateScore, calculateCandidateScore, rankCandidateTasks } from './scoring.js';
+export { candidateScore, calculateCandidateScore, rankCandidateTasks, parseDeadline } from './scoring.js';
 
 /**
  * Generates today's suggested plan from the available active tasks.

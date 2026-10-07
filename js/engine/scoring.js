@@ -12,13 +12,62 @@ import { daysBetween, today } from '../utils/date.js';
  *   - preferences {Object} User preferences object
  * @returns {number} The calculated score
  */
-export function scoreTask(task, context) {
-  const { date, currentPlan = [], energyWindow = 'medium', preferences } = context;
+/**
+ * Safely parses deadline strings into date and time components.
+ * Handles formats:
+ * - "YYYY-MM-DD" -> { date: "YYYY-MM-DD", time: null, hasTime: false }
+ * - "YYYY-MM-DDTHH:MM..." -> { date: "YYYY-MM-DD", time: "HH:MM", hasTime: true }
+ * - "YYYY-MM-DD HH:MM..." -> { date: "YYYY-MM-DD", time: "HH:MM", hasTime: true }
+ * - "HH:MM" (time-only) -> { date: defaultDate, time: "HH:MM", hasTime: true }
+ * 
+ * @param {string} deadline 
+ * @param {string} [defaultDate]
+ * @returns {{ date: string, time: string|null, hasTime: boolean } | null}
+ */
+export function parseDeadline(deadline, defaultDate = today()) {
+  if (!deadline || typeof deadline !== 'string') return null;
+
+  const trimmed = deadline.trim();
+  if (!trimmed) return null;
+
+  let datePart = defaultDate;
+  let timePart = null;
+
+  if (trimmed.includes('T')) {
+    const parts = trimmed.split('T');
+    datePart = parts[0];
+    timePart = parts[1] ? parts[1].substring(0, 5) : null;
+  } else if (trimmed.includes(' ')) {
+    const parts = trimmed.split(' ');
+    datePart = parts[0];
+    timePart = parts[1] ? parts[1].substring(0, 5) : null;
+  } else if (trimmed.includes('-')) {
+    datePart = trimmed;
+    timePart = null;
+  } else if (trimmed.includes(':')) {
+    // Time-only format, e.g. "15:00"
+    datePart = defaultDate;
+    timePart = trimmed.substring(0, 5);
+  } else {
+    datePart = trimmed;
+    timePart = null;
+  }
+
+  return {
+    date: datePart,
+    time: timePart,
+    hasTime: Boolean(timePart && timePart.includes(':'))
+  };
+}
+
+export function scoreTask(task, context = {}) {
+  const { currentPlan = [], energyWindow = 'medium', preferences } = context;
+  const planningDate = context.date || today();
   
   let score = 0;
 
-  const isDue = isTaskDueOn(task, date);
-  const createdDateStr = task.createdAt.split('T')[0];
+  const isDue = isTaskDueOn(task, planningDate);
+  const createdDateStr = task.createdAt ? task.createdAt.split('T')[0] : planningDate;
   const lastCompDateStr = task.lastCompletedAt ? task.lastCompletedAt.split('T')[0] : null;
 
   // 1. Due Today (+40)
@@ -45,26 +94,32 @@ export function scoreTask(task, context) {
   if (task.recurrence) {
     const baseDate = lastCompDateStr || createdDateStr;
     const nextDue = getNextDueDate(task, baseDate);
-    if (nextDue && nextDue < date) {
-      const overdueDays = daysBetween(nextDue, date);
+    if (nextDue && nextDue < planningDate) {
+      const overdueDays = daysBetween(nextDue, planningDate);
       score += Math.min(90, overdueDays * 30);
     }
-  } else if (!task.lastCompletedAt && task.deadline && task.deadline < date) {
-    // Non-recurring task overdue past deadline
-    const overdueDays = daysBetween(task.deadline, date);
-    score += Math.min(90, overdueDays * 30);
+  } else if (!task.lastCompletedAt && task.deadline) {
+    const parsedDeadline = parseDeadline(task.deadline, planningDate);
+    if (parsedDeadline && parsedDeadline.date < planningDate) {
+      // Non-recurring task overdue past deadline
+      const overdueDays = daysBetween(parsedDeadline.date, planningDate);
+      score += Math.min(90, overdueDays * 30);
+    }
   }
 
   // 5. Deadline Urgency (+15 to +50)
   if (task.deadline && !task.lastCompletedAt) {
-    const daysToDeadline = daysBetween(date, task.deadline);
-    if (task.deadline >= date) {
-      if (daysToDeadline <= 1) score += 50;
-      else if (daysToDeadline <= 3) score += 30;
-      else if (daysToDeadline <= 7) score += 15;
-    } else {
-      // Already overdue (handled above but add baseline maximum urgency here)
-      score += 50;
+    const parsedDeadline = parseDeadline(task.deadline, planningDate);
+    if (parsedDeadline) {
+      if (parsedDeadline.date < planningDate) {
+        // Already overdue (handled above but add baseline maximum urgency here)
+        score += 50;
+      } else {
+        const daysToDeadline = daysBetween(planningDate, parsedDeadline.date);
+        if (daysToDeadline <= 1) score += 50;
+        else if (daysToDeadline <= 3) score += 30;
+        else if (daysToDeadline <= 7) score += 15;
+      }
     }
   }
 
@@ -160,16 +215,18 @@ export function calculateCandidateScore(task, context = {}) {
   if (typeof task.urgency === 'number') {
     urgencyScore = task.urgency <= 5 && task.urgency >= 0 ? (task.urgency / 5) * 100 : task.urgency;
   } else if (task.deadline) {
-    const deadlineDateStr = task.deadline.split('T')[0];
-    if (deadlineDateStr < date) {
-      urgencyScore = 100; // Past due
-    } else {
-      const daysToDeadline = daysBetween(date, deadlineDateStr);
-      if (daysToDeadline === 0) urgencyScore = 95;
-      else if (daysToDeadline <= 1) urgencyScore = 85;
-      else if (daysToDeadline <= 3) urgencyScore = 70;
-      else if (daysToDeadline <= 7) urgencyScore = 45;
-      else urgencyScore = 20;
+    const parsedDeadline = parseDeadline(task.deadline, date);
+    if (parsedDeadline) {
+      if (parsedDeadline.date < date) {
+        urgencyScore = 100; // Past due
+      } else {
+        const daysToDeadline = daysBetween(date, parsedDeadline.date);
+        if (daysToDeadline === 0) urgencyScore = 95;
+        else if (daysToDeadline <= 1) urgencyScore = 85;
+        else if (daysToDeadline <= 3) urgencyScore = 70;
+        else if (daysToDeadline <= 7) urgencyScore = 45;
+        else urgencyScore = 20;
+      }
     }
   }
   urgencyScore = Math.max(0, Math.min(100, urgencyScore));
@@ -188,33 +245,35 @@ export function calculateCandidateScore(task, context = {}) {
   // 4. Deadline Fit / Deadline Pressure (weight: 0.10)
   let deadlineScore = 0;
   if (task.deadline) {
-    const deadlineDateStr = task.deadline.split('T')[0];
-    if (deadlineDateStr < date) {
-      deadlineScore = 100; // Overdue
-    } else if (deadlineDateStr === date) {
-      // Due today
-      if (task.deadline.includes('T') || task.deadline.includes(':')) {
-        const timePart = task.deadline.includes('T') ? task.deadline.split('T')[1].substring(0, 5) : task.deadline;
-        if (slotTime) {
-          const [sH, sM] = slotTime.split(':').map(Number);
-          const [dH, dM] = timePart.split(':').map(Number);
-          const diffMin = (dH * 60 + dM) - (sH * 60 + sM);
-          if (diffMin <= 0) deadlineScore = 100;
-          else if (diffMin <= 120) deadlineScore = 95;
-          else if (diffMin <= 240) deadlineScore = 85;
-          else deadlineScore = 75;
+    const parsedDeadline = parseDeadline(task.deadline, date);
+    if (parsedDeadline) {
+      if (parsedDeadline.date < date) {
+        deadlineScore = 100; // Overdue
+      } else if (parsedDeadline.date === date) {
+        // Due today
+        if (parsedDeadline.hasTime) {
+          const timePart = parsedDeadline.time;
+          if (slotTime) {
+            const [sH, sM] = slotTime.split(':').map(Number);
+            const [dH, dM] = timePart.split(':').map(Number);
+            const diffMin = (dH * 60 + dM) - (sH * 60 + sM);
+            if (diffMin <= 0) deadlineScore = 100;
+            else if (diffMin <= 120) deadlineScore = 95;
+            else if (diffMin <= 240) deadlineScore = 85;
+            else deadlineScore = 75;
+          } else {
+            deadlineScore = 90;
+          }
         } else {
-          deadlineScore = 90;
+          deadlineScore = 85;
         }
       } else {
-        deadlineScore = 85;
+        const days = daysBetween(date, parsedDeadline.date);
+        if (days === 1) deadlineScore = 70;
+        else if (days <= 3) deadlineScore = 50;
+        else if (days <= 7) deadlineScore = 25;
+        else deadlineScore = 10;
       }
-    } else {
-      const days = daysBetween(date, deadlineDateStr);
-      if (days === 1) deadlineScore = 70;
-      else if (days <= 3) deadlineScore = 50;
-      else if (days <= 7) deadlineScore = 25;
-      else deadlineScore = 10;
     }
   }
 
