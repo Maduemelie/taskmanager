@@ -2,6 +2,7 @@
 import { createTask, updateTask, deleteTask, getTask } from '../models/task.js';
 import { getPreferences } from '../models/preferences.js';
 import { showToast } from '../components/toast.js';
+import { extractTaskFromText } from '../engine/aiService.js';
 
 let selectedEnergy = 'medium';
 
@@ -33,8 +34,86 @@ export function initAddTaskView() {
   const cancelBtn = document.getElementById('task-cancel-btn');
   const deleteBtn = document.getElementById('task-delete-btn');
   const saveBtn = document.getElementById('task-save-btn');
+  const aiAssistBtn = document.getElementById('task-ai-assist-btn');
 
   if (!form) return;
+
+  // AI Assist / Auto-Fill Button
+  if (aiAssistBtn) {
+    aiAssistBtn.addEventListener('click', async () => {
+      const taskNameInput = document.getElementById('task-name');
+      const val = taskNameInput ? taskNameInput.value.trim() : '';
+      if (!val) {
+        showToast('Type a task name or description first!', 'info');
+        if (taskNameInput) taskNameInput.focus();
+        return;
+      }
+
+      try {
+        const prefs = await getPreferences();
+        const buckets = prefs.buckets || [];
+        const result = await extractTaskFromText(val, { availableBuckets: buckets });
+        const { task } = result;
+
+        // Apply suggestions to form
+        if (task.title && task.title !== val && taskNameInput) {
+          taskNameInput.value = task.title;
+        }
+
+        const bucketSelect = document.getElementById('task-bucket');
+        if (bucketSelect && task.categoryId) {
+          bucketSelect.value = task.categoryId;
+        }
+
+        if (durationInput && task.estimatedMinutes) {
+          durationInput.value = task.estimatedMinutes;
+          durationPresets.forEach(c => {
+            if (c.dataset.min === String(task.estimatedMinutes)) {
+              c.classList.add('selected');
+            } else {
+              c.classList.remove('selected');
+            }
+          });
+        }
+
+        if (task.energy) {
+          selectedEnergy = task.energy;
+          energyOptions.forEach(o => {
+            if (o.dataset.energy === task.energy) {
+              o.classList.add('selected');
+            } else {
+              o.classList.remove('selected');
+            }
+          });
+        }
+
+        if (priorityInput && task.priority) {
+          const sliderVal = Math.max(1, Math.min(5, Math.round(task.priority / 20)));
+          priorityInput.value = sliderVal;
+          if (priorityDisplay) priorityDisplay.textContent = sliderVal;
+        }
+
+        const prefTimeSelect = document.getElementById('task-preferred-time');
+        if (prefTimeSelect && task.preferredTime && task.preferredTime !== 'anytime') {
+          prefTimeSelect.value = task.preferredTime;
+        }
+
+        if (task.deadline) {
+          if (deadlineToggle) {
+            deadlineToggle.checked = true;
+            const deadlineGroup = document.getElementById('deadline-group');
+            if (deadlineGroup) deadlineGroup.classList.remove('hidden');
+          }
+          if (deadlineInput) deadlineInput.value = task.deadline;
+        }
+
+        showToast('AI suggestions applied! ✨', 'success');
+      } catch (err) {
+        console.error('AI assist error:', err);
+        showToast('Could not analyze task', 'warning');
+      }
+    });
+  }
 
   // 1. Priority Slider display
   if (priorityInput && priorityDisplay) {

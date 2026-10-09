@@ -1,10 +1,11 @@
-/* js/views/bucket.js */
-import { getActiveTasks, transitionTaskStatus } from '../models/task.js';
+import { getActiveTasks, transitionTaskStatus, updateTask, createTask, deleteTask } from '../models/task.js';
 import { getPreferences } from '../models/preferences.js';
 import { renderTaskCard } from '../components/taskCard.js';
 import { showToast } from '../components/toast.js';
+import { openModal, closeModal } from '../components/modal.js';
 import { stagger, slideUp } from '../utils/animate.js';
 import { parseNaturalLanguageTask, quickCaptureTask } from '../engine/quickCapture.js';
+import { suggestTaskClarifications } from '../engine/aiService.js';
 
 let currentFilter = 'all';
 let searchQuery = '';
@@ -353,15 +354,22 @@ function renderAIInboxSection(inboxTasks, container) {
       }
     });
 
-    // Add quick approve button to inbox task cards
+    // Add action button group to inbox task cards (AI Clarify + Quick Approve)
+    const btnGroup = document.createElement('div');
+    btnGroup.style.cssText = 'display:flex; gap:6px; margin-top:var(--spacing-xs); flex-wrap:wrap;';
+
+    const clarifyBtn = document.createElement('button');
+    clarifyBtn.className = 'btn btn-primary';
+    clarifyBtn.style.cssText = 'padding:4px 10px; font-size:0.75rem; border-radius:var(--radius-sm); font-weight:700;';
+    clarifyBtn.textContent = '✨ AI Clarify';
+    clarifyBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openAIClarifyModal(task, cachedBuckets);
+    });
+
     const approveBtn = document.createElement('button');
     approveBtn.className = 'btn btn-ghost';
-    approveBtn.style.padding = '4px 10px';
-    approveBtn.style.fontSize = '0.75rem';
-    approveBtn.style.color = 'var(--secondary-color)';
-    approveBtn.style.border = '1px solid var(--secondary-color)';
-    approveBtn.style.borderRadius = 'var(--radius-sm)';
-    approveBtn.style.marginTop = 'var(--spacing-xs)';
+    approveBtn.style.cssText = 'padding:4px 10px; font-size:0.75rem; color:var(--secondary-color); border:1px solid var(--secondary-color); border-radius:var(--radius-sm);';
     approveBtn.textContent = '✓ Ready to Schedule';
     
     approveBtn.addEventListener('click', async (e) => {
@@ -375,12 +383,211 @@ function renderAIInboxSection(inboxTasks, container) {
       }
     });
 
+    btnGroup.appendChild(clarifyBtn);
+    btnGroup.appendChild(approveBtn);
+
     const cardContent = cardNode.querySelector('.timeline-card-content');
     if (cardContent) {
-      cardContent.appendChild(approveBtn);
+      cardContent.appendChild(btnGroup);
     }
 
     cardsList.appendChild(cardNode);
+  });
+}
+
+/**
+ * Opens the interactive AI Clarification Assistant modal per Sections 4.4, 7.3, and 10.
+ */
+function openAIClarifyModal(task, cachedBuckets) {
+  const proposal = suggestTaskClarifications(task, cachedBuckets);
+  if (!proposal) return;
+
+  const content = document.createElement('div');
+  content.className = 'ai-clarify-dialog';
+
+  const bucketOptions = cachedBuckets.map(b => 
+    `<option value="${b.id}" ${b.id === proposal.suggestedCategory ? 'selected' : ''}>${b.emoji || '📁'} ${b.name}</option>`
+  ).join('');
+
+  const subtasksHtml = proposal.suggestedSubtasks.map((st, idx) => `
+    <li style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 0; border-bottom:1px solid var(--border-color);">
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.85rem; flex:1;">
+        <input type="checkbox" class="clarify-subtask-check" data-idx="${idx}" checked>
+        <span>${escapeHtml(st.title)}</span>
+      </label>
+      <span class="badge" style="font-size:0.75rem; background:rgba(0,0,0,0.05);">${st.estimatedMinutes}m</span>
+    </li>
+  `).join('');
+
+  content.innerHTML = `
+    <div style="margin-bottom:var(--spacing-md);">
+      <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:4px;">Original Prompt</p>
+      <div style="font-size:0.9rem; font-weight:700; background:rgba(0,0,0,0.03); padding:8px 12px; border-radius:var(--radius-sm); border-left:3px solid var(--primary-color);">
+        "${escapeHtml(proposal.originalTitle)}"
+      </div>
+    </div>
+
+    <div class="form-group" style="margin-bottom:var(--spacing-md);">
+      <label class="form-label" for="clarify-title" style="font-size:0.85rem; font-weight:700;">Refined Title</label>
+      <input type="text" id="clarify-title" class="input" value="${escapeHtml(proposal.refinedTitle)}" style="width:100%; box-sizing:border-box;">
+    </div>
+
+    <div class="form-group" style="margin-bottom:var(--spacing-md);">
+      <label class="form-label" for="clarify-bucket" style="font-size:0.85rem; font-weight:700;">Category</label>
+      <select id="clarify-bucket" class="select" style="width:100%; box-sizing:border-box;">
+        ${bucketOptions}
+      </select>
+      <p style="font-size:0.75rem; color:var(--secondary-color); margin-top:4px;">💡 ${escapeHtml(proposal.categoryReasoning)}</p>
+    </div>
+
+    <div class="form-group" style="margin-bottom:var(--spacing-md);">
+      <label class="form-label" style="font-size:0.85rem; font-weight:700;">Duration</label>
+      <div class="segmented-control" id="clarify-duration-pills" style="display:flex; gap:6px;">
+        ${[15, 30, 45, 60, 90].map(m => `
+          <button type="button" class="segment-btn ${m === proposal.suggestedDuration ? 'active' : ''}" data-min="${m}" style="flex:1; padding:6px 0; border:1px solid var(--border-color); background:${m === proposal.suggestedDuration ? 'var(--primary-light)' : 'var(--surface-color)'}; color:${m === proposal.suggestedDuration ? 'var(--primary-color)' : 'var(--text-color)'}; border-radius:var(--radius-sm); font-size:0.8rem; font-weight:700; cursor:pointer;">${m}m</button>
+        `).join('')}
+      </div>
+      <p style="font-size:0.75rem; color:var(--text-muted); margin-top:4px;">⏱️ ${escapeHtml(proposal.durationReasoning)}</p>
+    </div>
+
+    <div class="form-group" style="margin-bottom:var(--spacing-md);">
+      <label class="form-label" style="font-size:0.85rem; font-weight:700;">Energy Profile</label>
+      <div class="segmented-control" id="clarify-energy-pills" style="display:flex; gap:6px;">
+        ${['low', 'medium', 'high'].map(e => `
+          <button type="button" class="segment-btn ${e === proposal.suggestedEnergy ? 'active' : ''}" data-energy="${e}" style="flex:1; padding:6px 0; border:1px solid var(--border-color); background:${e === proposal.suggestedEnergy ? 'var(--primary-light)' : 'var(--surface-color)'}; color:${e === proposal.suggestedEnergy ? 'var(--primary-color)' : 'var(--text-color)'}; border-radius:var(--radius-sm); font-size:0.8rem; font-weight:700; text-transform:capitalize; cursor:pointer;">${e === 'high' ? '🚀' : e === 'low' ? '🔋' : '⚡'} ${e}</button>
+        `).join('')}
+      </div>
+      <p style="font-size:0.75rem; color:var(--text-muted); margin-top:4px;">⚡ ${escapeHtml(proposal.energyReasoning)}</p>
+    </div>
+
+    ${proposal.suggestedSubtasks.length > 0 ? `
+      <div style="margin-bottom:var(--spacing-lg);">
+        <label class="form-label" style="font-size:0.85rem; font-weight:700;">Suggested Action Steps</label>
+        <ul style="list-style:none; padding:0; margin:4px 0 0 0;">
+          ${subtasksHtml}
+        </ul>
+      </div>
+    ` : ''}
+
+    <div style="display:flex; flex-direction:column; gap:8px; margin-top:var(--spacing-lg);">
+      <button id="clarify-accept-btn" class="btn btn-primary" style="width:100%;">
+        ✓ Accept & Promote to Ready
+      </button>
+      ${proposal.suggestedSubtasks.length > 0 ? `
+        <button id="clarify-decompose-btn" class="btn btn-secondary" style="width:100%;">
+          ⚡ Decompose into Multiple Tasks
+        </button>
+      ` : ''}
+      <button id="clarify-cancel-btn" class="btn btn-ghost" style="width:100%;">
+        Cancel
+      </button>
+    </div>
+  `;
+
+  openModal('AI Clarification Assistant ✨', content);
+
+  let selectedDuration = proposal.suggestedDuration;
+  let selectedEnergy = proposal.suggestedEnergy;
+
+  // Duration pill clicks
+  content.querySelectorAll('#clarify-duration-pills .segment-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      content.querySelectorAll('#clarify-duration-pills .segment-btn').forEach(b => {
+        b.classList.remove('active');
+        b.style.background = 'var(--surface-color)';
+        b.style.color = 'var(--text-color)';
+      });
+      btn.classList.add('active');
+      btn.style.background = 'var(--primary-light)';
+      btn.style.color = 'var(--primary-color)';
+      selectedDuration = parseInt(btn.dataset.min, 10);
+    });
+  });
+
+  // Energy pill clicks
+  content.querySelectorAll('#clarify-energy-pills .segment-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      content.querySelectorAll('#clarify-energy-pills .segment-btn').forEach(b => {
+        b.classList.remove('active');
+        b.style.background = 'var(--surface-color)';
+        b.style.color = 'var(--text-color)';
+      });
+      btn.classList.add('active');
+      btn.style.background = 'var(--primary-light)';
+      btn.style.color = 'var(--primary-color)';
+      selectedEnergy = btn.dataset.energy;
+    });
+  });
+
+  // Cancel
+  document.getElementById('clarify-cancel-btn')?.addEventListener('click', closeModal);
+
+  // Accept and promote to ready
+  document.getElementById('clarify-accept-btn')?.addEventListener('click', async () => {
+    const refinedTitle = document.getElementById('clarify-title').value.trim() || proposal.refinedTitle;
+    const selectedBucket = document.getElementById('clarify-bucket').value;
+
+    const checkedSubtasks = [];
+    content.querySelectorAll('.clarify-subtask-check:checked').forEach(cb => {
+      const idx = parseInt(cb.dataset.idx, 10);
+      if (proposal.suggestedSubtasks[idx]) {
+        checkedSubtasks.push(proposal.suggestedSubtasks[idx]);
+      }
+    });
+
+    await updateTask(task.id, {
+      title: refinedTitle,
+      name: refinedTitle,
+      categoryId: selectedBucket,
+      bucket: selectedBucket,
+      estimatedMinutes: selectedDuration,
+      energy: selectedEnergy,
+      energyLevel: selectedEnergy,
+      status: 'ready',
+      subtasks: checkedSubtasks
+    });
+
+    closeModal();
+    showToast(`"${refinedTitle}" clarified and promoted to Ready! ✨`, 'success');
+    await renderBucketView();
+  });
+
+  // Decompose into separate tasks
+  document.getElementById('clarify-decompose-btn')?.addEventListener('click', async () => {
+    const selectedBucket = document.getElementById('clarify-bucket').value;
+    const checkedSubtasks = [];
+    content.querySelectorAll('.clarify-subtask-check:checked').forEach(cb => {
+      const idx = parseInt(cb.dataset.idx, 10);
+      if (proposal.suggestedSubtasks[idx]) {
+        checkedSubtasks.push(proposal.suggestedSubtasks[idx]);
+      }
+    });
+
+    if (checkedSubtasks.length === 0) {
+      showToast('No subtasks selected for decomposition', 'warning');
+      return;
+    }
+
+    for (const st of checkedSubtasks) {
+      await createTask({
+        title: st.title,
+        name: st.title,
+        categoryId: selectedBucket,
+        bucket: selectedBucket,
+        estimatedMinutes: st.estimatedMinutes,
+        energy: st.energy || selectedEnergy,
+        energyLevel: st.energy || selectedEnergy,
+        priority: task.priority || 50,
+        status: 'ready'
+      });
+    }
+
+    // Archive original broad task
+    await deleteTask(task.id);
+
+    closeModal();
+    showToast(`Decomposed into ${checkedSubtasks.length} actionable tasks! 🚀`, 'success');
+    await renderBucketView();
   });
 }
 

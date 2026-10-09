@@ -337,8 +337,13 @@
 
           <!-- Name -->
           <div class="form-group">
-            <label class="form-label" for="task-name">Task Name</label>
-            <input type="text" id="task-name" class="input" placeholder="e.g., Study Machine Learning" required>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-xs);">
+              <label class="form-label" for="task-name" style="margin-bottom: 0;">Task Name</label>
+              <button type="button" id="task-ai-assist-btn" class="btn btn-ghost" style="padding: 2px 8px; font-size: 0.75rem; color: var(--primary-color); font-weight: 700; border: 1px solid var(--primary-color); border-radius: var(--radius-sm);">
+                ✨ AI Assist
+              </button>
+            </div>
+            <input type="text" id="task-name" class="input" placeholder="e.g., Study Machine Learning for an hour" required>
           </div>
 
           <!-- Bucket / Category -->
