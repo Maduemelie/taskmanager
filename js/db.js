@@ -11,11 +11,12 @@ db.version(1).stores({
   preferences: 'id'
 });
 
-// Schema v2: Canonical Adaptive AI Planner indexing
-db.version(2).stores({
+// Schema v3: Add daily feedback for Phase 8
+db.version(3).stores({
   tasks: 'id, categoryId, bucket, status, priority, energy, isActive, isArchived',
   dailyPlans: 'id, date',
-  preferences: 'id'
+  preferences: 'id',
+  dailyFeedback: 'id, date'
 }).upgrade(tx => {
   return tx.tasks.toCollection().modify(task => {
     if (!task.title && task.name) task.title = task.name;

@@ -1,5 +1,6 @@
 /* js/views/today.js */
 import { getTodayPlan, markTaskStatus, updatePlan } from '../models/plan.js';
+import { saveDailyFeedback, getDailyFeedback } from '../models/feedback.js';
 import { getAllTasks, createTask, getTask } from '../models/task.js';
 import { getPreferences } from '../models/preferences.js';
 import { renderTimeSlot } from '../components/timeSlot.js';
@@ -726,8 +727,15 @@ function renderNowCard(activeSlots, taskMap, currentMin) {
           <p style="font-size: 0.85rem; color: var(--text-muted); margin: 4px 0 0 0;">
             Great execution today. Time to relax and recharge.
           </p>
+          <div style="margin-top: 12px;">
+            <button id="btn-daily-reflection" class="btn btn-primary" style="width: 100%;">📝 Reflect on Today</button>
+          </div>
         </div>
       `;
+      setTimeout(() => {
+        const reflectBtn = document.getElementById('btn-daily-reflection');
+        if (reflectBtn) reflectBtn.addEventListener('click', () => showDailyReflectionModal(activePlan));
+      }, 0);
     } else {
       container.innerHTML = '';
     }
@@ -1280,4 +1288,96 @@ function hideSlippageBanner() {
   if (banner) {
     banner.remove();
   }
+}
+
+
+/**
+ * Shows the end-of-day reflection modal (Phase 8).
+ */
+async function showDailyReflectionModal(plan) {
+  const existing = await getDailyFeedback(plan.date);
+
+  let completedCount = 0;
+  let totalTasks = 0;
+  let estimatedTotal = 0;
+  let actualTotal = 0;
+  
+  if (plan && plan.plannedTasks) {
+    totalTasks = plan.plannedTasks.length;
+    completedCount = plan.plannedTasks.filter(t => t.status === 'completed').length;
+    plan.plannedTasks.forEach(t => {
+      estimatedTotal += (t.estimatedMinutes || 0);
+      if (t.status === 'completed') {
+        actualTotal += (t.actualMinutes || t.estimatedMinutes || 0);
+      }
+    });
+  }
+
+  const content = document.createElement('div');
+  content.innerHTML = `
+    <div style="margin-bottom: var(--spacing-md);">
+      <h3 style="font-size: 1.2rem; font-weight: 800; color: var(--secondary-color);">Daily Wrap-Up</h3>
+      <p style="font-size: 0.9rem; color: var(--text-muted);">Take a moment to reflect on today's execution.</p>
+    </div>
+    
+    <div style="background: rgba(0,0,0,0.03); border-radius: var(--radius-md); padding: 12px; margin-bottom: var(--spacing-md);">
+      <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+        <span style="font-weight: 600;">Tasks Completed:</span>
+        <span>${completedCount} / ${totalTasks}</span>
+      </div>
+      <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+        <span style="font-weight: 600;">Estimated Time:</span>
+        <span>${estimatedTotal}m</span>
+      </div>
+      <div style="display: flex; justify-content: space-between;">
+        <span style="font-weight: 600;">Actual Time:</span>
+        <span style="${actualTotal > estimatedTotal ? 'color: var(--accent-color);' : 'color: var(--secondary-color);'}">${actualTotal}m</span>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="reflection-score">How did today feel? (1-5)</label>
+      <input type="range" id="reflection-score" min="1" max="5" value="${existing?.score || 3}" style="width: 100%;">
+      <div style="display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+        <span>Struggled</span>
+        <span>Okay</span>
+        <span>Flow State</span>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="reflection-notes">Any notes or learnings?</label>
+      <textarea id="reflection-notes" class="input" rows="3" placeholder="e.g., Underestimated the AI task, need to break it down more next time...">${existing?.notes || ''}</textarea>
+    </div>
+
+    <div style="display:flex;gap:var(--spacing-md);margin-top:var(--spacing-lg);">
+      <button id="reflection-cancel-btn" class="btn btn-secondary" style="flex:1;">Cancel</button>
+      <button id="reflection-save-btn" class="btn btn-primary" style="flex:1;">Save Reflection</button>
+    </div>
+  `;
+
+  openModal('Daily Reflection', content);
+
+  document.getElementById('reflection-cancel-btn').addEventListener('click', closeModal);
+  document.getElementById('reflection-save-btn').addEventListener('click', async () => {
+    const score = parseInt(document.getElementById('reflection-score').value, 10);
+    const notes = document.getElementById('reflection-notes').value.trim();
+
+    await saveDailyFeedback(plan.date, {
+      planId: plan.id,
+      score,
+      notes,
+      metrics: {
+        completedCount,
+        totalTasks,
+        estimatedTotal,
+        actualTotal
+      }
+    });
+
+    closeModal();
+    showToast('Reflection saved! See you tomorrow 🌅', 'success');
+    
+    triggerHaptic(20);
+  });
 }
