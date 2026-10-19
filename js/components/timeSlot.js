@@ -54,9 +54,18 @@ export function renderTimeSlot(slotEntry, task, callbacks = {}) {
   dot.className = 'timeline-dot';
   slot.appendChild(dot);
 
+  // Calculate whether past slot
+  const now = new Date();
+  const currentMin = now.getHours() * 60 + now.getMinutes();
+  const startMinVal = h * 60 + m;
+  const isPastSlot = currentMin >= totalMin;
+  const isLateSlot = currentMin >= startMinVal && !isPastSlot;
+
   // Status Badge mapping
   let statusEmoji = '⏳';
   let statusLabel = 'Upcoming';
+  let isOverdue = false;
+
   if (slotEntry.status === 'in-progress') {
     statusEmoji = '▶️';
     statusLabel = 'In Progress';
@@ -69,6 +78,16 @@ export function renderTimeSlot(slotEntry, task, callbacks = {}) {
   } else if (slotEntry.status === 'rescheduled') {
     statusEmoji = '🔄';
     statusLabel = 'Deferred';
+  } else if (slotEntry.status === 'pending') {
+    if (isPastSlot) {
+      statusEmoji = '⚠️';
+      statusLabel = 'Missed';
+      isOverdue = true;
+    } else if (isLateSlot) {
+      statusEmoji = '⏳';
+      statusLabel = 'Late';
+      isOverdue = true;
+    }
   }
 
   // Create Task Card callbacks wrapper
@@ -102,13 +121,20 @@ export function renderTimeSlot(slotEntry, task, callbacks = {}) {
   // Create a flex header wrapper for title + status badges
   const cardHeaderFlex = document.createElement('div');
   cardHeaderFlex.className = 'card-header-flex';
-  cardHeaderFlex.style.cssText = 'display:flex; align-items:flex-start; justify-content:space-between; gap:8px; min-width:0;';
+  cardHeaderFlex.style.cssText = 'display:flex; align-items:flex-start; justify-content:space-between; gap:8px; width:100%; min-width:0;';
 
   // Move the title into the flex header
   const titleEl = headerContainer.querySelector('.task-card-title');
   if (titleEl) {
     titleEl.style.flex = '1 1 auto';
     titleEl.style.minWidth = '0';
+    if (!titleEl.textContent || !titleEl.textContent.trim() || titleEl.textContent === 'Untitled Task') {
+      const fallbackName = (task && task.title && task.title.trim()) || 
+                           (task && task.name && task.name.trim()) || 
+                           (slotEntry.title && slotEntry.title.trim()) || 
+                           (slotEntry.name && slotEntry.name.trim());
+      if (fallbackName) titleEl.textContent = fallbackName;
+    }
     cardHeaderFlex.appendChild(titleEl);
   }
 
@@ -128,8 +154,8 @@ export function renderTimeSlot(slotEntry, task, callbacks = {}) {
 
   // Status chip
   const statusChip = document.createElement('span');
-  statusChip.className = `chip status-chip-${slotEntry.status}`;
-  statusChip.style.cssText = `font-size:0.7rem; padding:1px 6px; background-color:${getStatusColor(slotEntry.status)}; color:#FFF;`;
+  statusChip.className = `chip status-chip-${slotEntry.status} ${isOverdue ? 'status-chip-overdue' : ''}`;
+  statusChip.style.cssText = `font-size:0.7rem; padding:1px 6px; background-color:${getStatusColor(slotEntry.status, isOverdue)}; color:#FFF;`;
   statusChip.textContent = `${statusEmoji} ${statusLabel}`;
   badgeContainer.appendChild(statusChip);
 
@@ -168,7 +194,8 @@ export function renderTimeSlot(slotEntry, task, callbacks = {}) {
   return slot;
 }
 
-function getStatusColor(status) {
+function getStatusColor(status, isOverdue = false) {
+  if (isOverdue) return 'var(--accent-color)';
   switch (status) {
     case 'in-progress': return 'var(--primary-color)';
     case 'completed': return 'var(--secondary-color)';

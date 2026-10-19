@@ -97,7 +97,8 @@ export function renderTaskCard(task, mode, callbacks = {}) {
   title.style.overflow = 'hidden';
   title.style.textOverflow = 'ellipsis';
   title.style.wordBreak = 'break-word';
-  title.textContent = task.title || task.name || 'Untitled Task';
+  const taskTitle = (task.title && task.title.trim()) || (task.name && task.name.trim()) || 'Untitled Task';
+  title.textContent = taskTitle;
   cardContent.appendChild(title);
 
   // Footer Metadata row — Surfaces essential metadata without clutter (no full description)

@@ -9,7 +9,7 @@ Features:
   - Dynamic repository root resolution (git rev-parse --show-toplevel).
   - Fast duplicate check before execution (skips if content/analysis/<sha>.json exists unless force=True).
   - Atomic writing (.tmp -> os.replace) for all output files.
-  - Deterministic Mock Mode (AI_CONTENT_MOCK=1 or missing GEMINI_API_KEY) for instant, offline test runs.
+  - Explicit deterministic Mock Mode (AI_CONTENT_MOCK=1) for offline test runs.
   - Returns dictionary of created file paths.
 """
 
@@ -18,7 +18,6 @@ from __future__ import annotations
 import os
 import re
 import subprocess
-import sys
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Union
@@ -27,15 +26,13 @@ from ai_content.config import (
     ANALYSIS_DIR,
     ARTICLES_DIR,
     CONTENT_DIR,
-    GEMINI_API_KEY,
-    GEMINI_MODEL,
     JOURNAL_DIR,
     LOGS_DIR,
     REPO_ROOT,
-    is_gemini_configured,
 )
-from ai_content.git_context import GitCommitContext, collect_git_context, resolve_commit_sha
+from ai_content.git_context import GitCommitContext, collect_git_context
 from ai_content.models import DevelopmentSessionReport, slugify
+from ai_content.validation import ensure_article_frontmatter, strip_asterisk_emphasis, validate_publications
 
 if TYPE_CHECKING:
     from crewai import LLM
@@ -77,8 +74,8 @@ def get_effective_repo_root(
 def is_mock_mode(mock: Optional[bool] = None) -> bool:
     """Check if pipeline should run in Mock Mode.
 
-    Explicit parameter overrides environment. If unconfigured or GEMINI_API_KEY
-    is not set, defaults to True for deterministic, fast, offline execution.
+    Explicit parameter overrides environment. Mocking must be requested explicitly;
+    missing credentials are generation failures, not permission to emit mock content.
     """
     if mock is not None:
         return bool(mock)
@@ -87,7 +84,7 @@ def is_mock_mode(mock: Optional[bool] = None) -> bool:
         return True
     if env_mock in ("0", "false", "no"):
         return False
-    return not is_gemini_configured()
+    return False
 
 
 def atomic_write_text(
@@ -102,17 +99,27 @@ def atomic_write_text(
     """
     dest_path = Path(filepath).resolve()
     dest_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_filename = f"{dest_path.name}.tmp.{os.getpid()}_{time.time_ns()}"
+    temp_filename = f".tmp_{os.getpid()}_{time.time_ns() % 1000000}"
     temp_path = dest_path.parent / temp_filename
+
+    str_temp = str(temp_path)
+    str_dest = str(dest_path)
+    if os.name == "nt":
+        if not str_temp.startswith("\\\\?\\"):
+            str_temp = f"\\\\?\\{str_temp}"
+        if not str_dest.startswith("\\\\?\\"):
+            str_dest = f"\\\\?\\{str_dest}"
+
     try:
-        temp_path.write_text(content, encoding=encoding)
-        temp_path.replace(dest_path)  # Atomic NTFS and POSIX rename
+        with open(str_temp, "w", encoding=encoding) as f:
+            f.write(content)
+        os.replace(str_temp, str_dest)  # Atomic NTFS and POSIX rename
     except Exception:
-        if temp_path.exists():
-            try:
-                temp_path.unlink()
-            except OSError:
-                pass
+        try:
+            if os.path.exists(str_temp):
+                os.unlink(str_temp)
+        except OSError:
+            pass
         raise
     return dest_path
 
@@ -302,15 +309,7 @@ def execute_crew_pipeline(
         verbose=False,
     )
 
-    try:
-        crew.kickoff()
-    except Exception as exc:
-        print(
-            f"[WARNING] Live CrewAI LLM execution failed ({exc}). "
-            "Gracefully falling back to deterministic generation.",
-            file=sys.stderr,
-        )
-        return generate_mock_content(git_context)
+    crew.kickoff()
 
     # 4. Extract DevelopmentSessionReport
     report: Optional[DevelopmentSessionReport] = None
@@ -327,16 +326,16 @@ def execute_crew_pipeline(
             except Exception:
                 pass
 
-    # Fallback to deterministic mock content if extraction failed
-    mock_report, default_art, default_jrn, default_soc = generate_mock_content(git_context)
+    # A schema-invalid analyst result must stop publication, not silently turn
+    # into synthetic/mock content that looks like a successful generation.
     if report is None:
-        report = mock_report
+        raise ValueError("The LLM did not return a valid DevelopmentSessionReport")
 
     # 5. Extract Markdown publications from Reviewer output
     review_raw = task_review.output.raw if task_review.output and task_review.output.raw else ""
-    article_md = default_art
-    journal_md = default_jrn
-    social_md = default_soc
+    article_md = ""
+    journal_md = ""
+    social_md = ""
 
     if "===ARTICLE===" in review_raw and "===JOURNAL===" in review_raw and "===SOCIAL===" in review_raw:
         try:
@@ -352,7 +351,8 @@ def execute_crew_pipeline(
         except Exception:
             pass
     else:
-        # Fallback to individual writer task outputs
+        # Extract each writer result. Missing output is rejected by validation;
+        # synthetic content is never substituted for an LLM failure.
         if task_article.output and task_article.output.raw and len(task_article.output.raw.strip()) >= 50:
             article_md = task_article.output.raw.strip()
         if task_journal.output and task_journal.output.raw and len(task_journal.output.raw.strip()) >= 30:
@@ -360,6 +360,11 @@ def execute_crew_pipeline(
         if task_social.output and task_social.output.raw and len(task_social.output.raw.strip()) >= 20:
             social_md = task_social.output.raw.strip()
 
+    article_md = ensure_article_frontmatter(article_md, report, git_context)
+    article_md = strip_asterisk_emphasis(article_md)
+    journal_md = strip_asterisk_emphasis(journal_md)
+    social_md = strip_asterisk_emphasis(social_md)
+    validate_publications(report, article_md, journal_md, social_md, git_context)
     return report, article_md, journal_md, social_md
 
 
@@ -368,6 +373,7 @@ def run_pipeline(
     force: bool = False,
     mock: Optional[bool] = None,
     repo_root: Optional[Union[str, Path]] = None,
+    staged_context: Optional[GitCommitContext] = None,
 ) -> Dict[str, Path]:
     """Execute the AI development content generation pipeline for a commit.
 
@@ -393,13 +399,26 @@ def run_pipeline(
         d.mkdir(parents=True, exist_ok=True)
 
     # 1. Collect Git Context
-    git_context = collect_git_context(commit_ref=commit_ref, repo_root=root)
+    git_context = staged_context or collect_git_context(commit_ref=commit_ref, repo_root=root)
     sha = git_context.sha
     short_sha = git_context.short_sha
 
+    # A commit SHA does not exist until after the commit-msg hook. Stage the
+    # validated result under a tree+subject key, then post-commit remaps it.
+    if staged_context is not None:
+        pending_id = f"{sha}-{slugify(git_context.message_subject)}"
+        pending_root = root / "content" / ".pending" / pending_id
+        analysis_dir = pending_root / "analysis"
+        articles_dir = pending_root / "articles"
+        journal_dir = pending_root / "journal"
+        social_dir = pending_root / "social"
+        logs_dir = pending_root / "logs"
+        for d in (analysis_dir, articles_dir, journal_dir, social_dir, logs_dir):
+            d.mkdir(parents=True, exist_ok=True)
+
     # 2. Duplicate Check
     analysis_file = analysis_dir / f"{sha}.json"
-    if analysis_file.is_file() and not force:
+    if analysis_file.is_file() and not force and staged_context is None:
         existing_articles = sorted(articles_dir.glob(f"{sha}*.md"))
         existing_journals = sorted(journal_dir.glob(f"{sha}*.md"))
         existing_socials = sorted(social_dir.glob(f"{sha}*.md"))
@@ -414,12 +433,39 @@ def run_pipeline(
 
     # 3. Mode Execution
     use_mock = is_mock_mode(mock)
+    if staged_context is not None and use_mock:
+        raise ValueError("Commit-time generation requires a live free-tier LLM; mock mode is not allowed")
     if use_mock:
         report, article_md, journal_md, social_md = generate_mock_content(git_context)
     else:
-        if not is_gemini_configured():
-            raise ValueError("GEMINI_API_KEY is not configured in .env or environment, but live mode was requested.")
-        report, article_md, journal_md, social_md = execute_crew_pipeline(git_context)
+        from ai_content.agents import get_free_llm_candidates
+
+        candidates = get_free_llm_candidates()
+        if not candidates:
+            raise ValueError("No free LLM provider is configured. Set GEMINI_API_KEY or GROQ_API_KEY.")
+        failures = []
+        for provider_name, provider_llm in candidates:
+            try:
+                report, article_md, journal_md, social_md = execute_crew_pipeline(
+                    git_context, llm=provider_llm
+                )
+                break
+            except Exception as exc:
+                safe_error = str(exc)
+                for secret_name in ("GEMINI_API_KEY", "GROQ_API_KEY"):
+                    secret = os.getenv(secret_name, "")
+                    if secret:
+                        safe_error = safe_error.replace(secret, "[redacted]")
+                failures.append(f"{provider_name}: {safe_error}")
+        else:
+            details = " | ".join(failures)
+            raise RuntimeError(f"All configured free LLM providers failed: {details}")
+
+    if not use_mock:
+        article_md = strip_asterisk_emphasis(article_md)
+        journal_md = strip_asterisk_emphasis(journal_md)
+        social_md = strip_asterisk_emphasis(social_md)
+        validate_publications(report, article_md, journal_md, social_md, git_context)
 
     # 4. Atomic File Writing
     slug = report.suggested_article_slug

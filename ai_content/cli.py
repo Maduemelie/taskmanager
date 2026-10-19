@@ -2,13 +2,14 @@
 
 Provides subcommands:
   - generate: Generate JSON analysis report and Markdown publications for a commit.
-  - install-hook: Install the non-blocking Git post-commit hook.
+  - install-hook: Install the blocking commit-time quality gate and finalizer.
   - status: Display configuration, hook status, and generated content inventory.
 """
 
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -49,6 +50,9 @@ from ai_content.config import (
     REPO_ROOT,
     SOCIAL_DIR,
     ensure_directories,
+    GROQ_API_KEY,
+    GROQ_MODEL,
+    is_any_free_provider_configured,
     is_gemini_configured,
 )
 
@@ -57,49 +61,39 @@ from ai_content.git_context import (
     GitCommitNotFoundError,
     GitError,
     collect_git_context,
+    collect_staged_context,
     resolve_commit_sha as git_resolve_commit_sha,
 )
-from ai_content.pipeline import get_effective_repo_root, run_pipeline
+from ai_content.pipeline import get_effective_repo_root, run_pipeline, atomic_write_text
+from ai_content.models import DevelopmentSessionReport, slugify
 
-HOOK_SCRIPT_TEMPLATE = """#!/bin/sh
-# Git post-commit hook for AI Development Content Generator
-# Installed by: python -m ai_content.cli install-hook
-# Asynchronously triggers pipeline in the background (< 1s execution)
-
-# 1. Unset GIT_INDEX_FILE to avoid index locking in background subprocess
-unset GIT_INDEX_FILE GIT_DIR GIT_WORK_TREE
-
-# 2. Resolve repository top-level directory
+COMMIT_MSG_HOOK_TEMPLATE = """#!/bin/sh
+# AI_CONTENT_GENERATOR: required, synchronous pre-commit content quality gate
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
-if [ -z "$REPO_ROOT" ]; then
-    exit 0
-fi
-
-# 3. Resolve canonical HEAD commit SHA
-COMMIT_SHA="$(git rev-parse HEAD 2>/dev/null)"
-if [ -z "$COMMIT_SHA" ]; then
-    exit 0
-fi
-
-# 4. Fast duplicate check: skip if analysis report already exists
-ANALYSIS_FILE="$REPO_ROOT/content/analysis/${COMMIT_SHA}.json"
-[ -f "$ANALYSIS_FILE" ] && exit 0
-
-# 5. Ensure logs directory exists
-LOGS_DIR="$REPO_ROOT/content/logs"
-mkdir -p "$LOGS_DIR"
-LOG_FILE="$LOGS_DIR/post-commit.log"
-
-cd "$REPO_ROOT" || exit 0
-
-# 6. Spawn content generator
+[ -n "$REPO_ROOT" ] || exit 1
+cd "$REPO_ROOT" || exit 1
 if command -v uv >/dev/null 2>&1; then
-    uv run python -m ai_content.cli generate "$COMMIT_SHA" >> content/logs/post-commit.log 2>&1 < /dev/null
+    uv run python -m ai_content.cli generate --staged --message-file "$1"
 else
-    python -m ai_content.cli generate "$COMMIT_SHA" >> content/logs/post-commit.log 2>&1 < /dev/null
+    python -m ai_content.cli generate --staged --message-file "$1"
 fi
+status=$?
+if [ "$status" -ne 0 ]; then
+    echo "Commit blocked: required AI content generation or quality validation failed." >&2
+fi
+exit "$status"
+"""
 
-exit 0
+POST_COMMIT_HOOK_TEMPLATE = """#!/bin/sh
+# AI_CONTENT_GENERATOR: map validated staged content to the final commit SHA
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+[ -n "$REPO_ROOT" ] || exit 1
+cd "$REPO_ROOT" || exit 1
+if command -v uv >/dev/null 2>&1; then
+    uv run python -m ai_content.cli finalize HEAD
+else
+    python -m ai_content.cli finalize HEAD
+fi
 """
 
 
@@ -210,6 +204,8 @@ def resolve_hooks_dir(repo_root: Path) -> Path:
 
 @cli.command("generate")
 @click.argument("commit_ref", default="HEAD", required=False)
+@click.option("--staged", is_flag=True, help="Generate and validate from the staged tree for commit-msg hooks.")
+@click.option("--message-file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option(
     "--force",
     "-f",
@@ -218,15 +214,18 @@ def resolve_hooks_dir(repo_root: Path) -> Path:
     default=False,
     help="Force regeneration even if analysis report already exists.",
 )
-def generate(commit_ref: str, force: bool) -> None:
+def generate(commit_ref: str, staged: bool, message_file: Optional[Path], force: bool) -> None:
     """Generate AI content (JSON analysis, article, journal, social thread) for a commit."""
     repo_root = get_effective_repo_root()
     analysis_dir = repo_root / "content" / "analysis"
     analysis_dir.mkdir(parents=True, exist_ok=True)
 
+    if staged and message_file is None:
+        raise click.ClickException("--staged requires --message-file from Git's commit-msg hook")
+
     # 1. Fast duplicate check before heavy operations (Requirement R4)
     # If commit_ref can be resolved and an analysis report already exists, skip unless --force
-    pre_resolved = resolve_commit_sha(commit_ref, repo_root=repo_root)
+    pre_resolved = None if staged else resolve_commit_sha(commit_ref, repo_root=repo_root)
     if pre_resolved and not force:
         analysis_file = analysis_dir / f"{pre_resolved}.json"
         if analysis_file.is_file():
@@ -239,7 +238,11 @@ def generate(commit_ref: str, force: bool) -> None:
 
     # 2. Collect Git Context (Milestone 2)
     try:
-        git_context = collect_git_context(commit_ref, repo_root=repo_root)
+        git_context = (
+            collect_staged_context(message_file, repo_root=repo_root)
+            if staged and message_file is not None
+            else collect_git_context(commit_ref, repo_root=repo_root)
+        )
     except GitCommitNotFoundError as exc:
         click.secho(f"Error: Commit '{commit_ref}' not found in repository: {exc}", fg="red", err=True)
         sys.exit(1)
@@ -251,7 +254,7 @@ def generate(commit_ref: str, force: bool) -> None:
     short_sha = git_context.short_sha
 
     # Secondary duplicate check in case pre_resolved was not a full SHA initially
-    if not force:
+    if not force and not staged:
         analysis_file = analysis_dir / f"{resolved_sha}.json"
         if analysis_file.is_file():
             click.secho(
@@ -262,16 +265,21 @@ def generate(commit_ref: str, force: bool) -> None:
             sys.exit(0)
 
     # API Key Configuration Warning
-    if not is_gemini_configured() and os.getenv("AI_CONTENT_MOCK") != "1":
+    if staged and os.getenv("AI_CONTENT_MOCK") == "1":
+        raise click.ClickException("AI_CONTENT_MOCK cannot be used for a commit; configure a free live model.")
+    if not is_any_free_provider_configured() and os.getenv("AI_CONTENT_MOCK") != "1":
         click.secho(
-            "Warning: GEMINI_API_KEY is not configured in .env or environment.",
+            "Warning: no free provider key is configured (set GEMINI_API_KEY or GROQ_API_KEY).",
             fg="yellow",
             err=True,
         )
 
     # 3. Invoke pipeline
     try:
-        output_files = run_pipeline(commit_ref=commit_ref, force=force, repo_root=repo_root)
+        output_files = run_pipeline(
+            commit_ref=commit_ref, force=force, repo_root=repo_root,
+            staged_context=git_context if staged else None,
+        )
         click.secho(f"Pipeline completed successfully for {resolved_sha}:", fg="green", bold=True)
         for output_type, path in output_files.items():
             click.echo(f"  - {output_type}: {path}")
@@ -281,9 +289,48 @@ def generate(commit_ref: str, force: bool) -> None:
         sys.exit(1)
 
 
+@cli.command("finalize")
+@click.argument("commit_ref", default="HEAD", required=False)
+def finalize(commit_ref: str) -> None:
+    """Bind commit-msg-hook output to the actual post-commit SHA."""
+    root = get_effective_repo_root()
+    try:
+        context = collect_git_context(commit_ref, repo_root=root)
+        tree_sha = subprocess.run(
+            ["git", "rev-parse", f"{context.sha}^{{tree}}"], cwd=str(root),
+            capture_output=True, text=True, check=True,
+        ).stdout.strip().lower()
+        pending = root / "content" / ".pending" / f"{tree_sha}-{slugify(context.message_subject)}"
+        if not pending.is_dir():
+            click.echo("No validated staged content found for this commit; nothing to finalize.")
+            return
+
+        report = DevelopmentSessionReport.from_json_file(pending / "analysis" / f"{tree_sha}.json")
+        updated_report = report.model_copy(update={"commit_sha": context.sha, "timestamp": context.date})
+        slug = updated_report.suggested_article_slug
+        mapping = (
+            ("articles", f"{tree_sha}-{slug}.md", root / "content" / "articles" / f"{context.sha}-{slug}.md"),
+            ("journal", f"{tree_sha}-{slug}.md", root / "content" / "journal" / f"{context.sha}-{slug}.md"),
+            ("social", f"{tree_sha}-{slug}.md", root / "content" / "social" / f"{context.sha}-{slug}.md"),
+        )
+        for subdir, filename, destination in mapping:
+            text = (pending / subdir / filename).read_text(encoding="utf-8")
+            text = text.replace(tree_sha, context.sha).replace(tree_sha[:7], context.short_sha)
+            text = text.replace(report.timestamp, context.date)
+            atomic_write_text(destination, text)
+        updated_report.to_json_file(root / "content" / "analysis" / f"{context.sha}.json")
+
+        pending_root = (root / "content" / ".pending").resolve()
+        if pending.resolve().is_relative_to(pending_root):
+            shutil.rmtree(pending)
+        click.echo(f"Finalized generated content for commit {context.sha}")
+    except Exception as exc:
+        raise click.ClickException(f"Could not finalize generated content: {exc}") from exc
+
+
 @cli.command("install-hook")
 def install_hook() -> None:
-    """Install the Git post-commit hook for automatic background generation."""
+    """Install required synchronous commit generation and post-commit finalization hooks."""
     repo_root = get_cli_repo_root()
     git_dir = repo_root / ".git"
     if not git_dir.exists():
@@ -293,23 +340,28 @@ def install_hook() -> None:
 
     hooks_dir = resolve_hooks_dir(repo_root)
     hooks_dir.mkdir(parents=True, exist_ok=True)
-    hook_path = hooks_dir / "post-commit"
+    hooks = {
+        hooks_dir / "commit-msg": COMMIT_MSG_HOOK_TEMPLATE,
+        hooks_dir / "post-commit": POST_COMMIT_HOOK_TEMPLATE,
+    }
+    for hook_path in hooks:
+        if hook_path.exists():
+            existing = hook_path.read_text(encoding="utf-8", errors="replace")
+            if "AI_CONTENT_GENERATOR:" not in existing and "AI Development Content Generator" not in existing:
+                raise click.ClickException(
+                    f"Refusing to overwrite existing custom hook: {hook_path}. Chain it manually with the AI content hook."
+                )
+    for hook_path, script_content in hooks.items():
+        hook_path.write_bytes(script_content.replace("\r\n", "\n").encode("utf-8"))
+        try:
+            hook_path.chmod(hook_path.stat().st_mode | 0o755)
+        except OSError:
+            pass
 
-    # Write hook script with standard LF line endings
-    script_content = HOOK_SCRIPT_TEMPLATE.replace("\r\n", "\n")
-    hook_path.write_bytes(script_content.encode("utf-8"))
-
-    # Set executable permissions (0o755)
-    try:
-        current_mode = hook_path.stat().st_mode
-        hook_path.chmod(current_mode | 0o755)
-    except OSError:
-        pass
-
-    click.secho("Git post-commit hook successfully installed!", fg="green", bold=True)
+    click.secho("Git commit-time generation hooks successfully installed!", fg="green", bold=True)
     click.echo(f"  Target: {hook_path}")
-    click.echo("  Mode:   Asynchronous background execution (< 1s latency)")
-    click.echo("  Log:    content/logs/post-commit.log")
+    click.echo("  Mode:   Synchronous generation and validation before commit")
+    click.echo(f"  Hooks:  {hooks_dir / 'commit-msg'}, {hooks_dir / 'post-commit'}")
 
 
 @cli.command("status")
@@ -337,6 +389,7 @@ def status() -> None:
     click.echo(f"  HEAD Commit:       {head_sha}")
     click.echo(f"  Content Directory: {content_dir}")
     click.echo(f"  Gemini Model:      {GEMINI_MODEL}")
+    click.echo(f"  Groq Model:        {GROQ_MODEL}")
 
     if is_gemini_configured():
         masked_key = f"...{GEMINI_API_KEY[-4:]}" if len(GEMINI_API_KEY) > 4 else "***"
@@ -346,23 +399,24 @@ def status() -> None:
             f"  Gemini API Key:    {click.style('Not Set', fg='yellow')} "
             "(Add GEMINI_API_KEY to .env)"
         )
+    click.echo(f"  Groq API Key:      {'Configured' if GROQ_API_KEY.strip() else 'Not Set'}")
 
     # Git Hook Status
-    click.secho("\n[Git Post-Commit Hook]", bold=True)
+    click.secho("\n[Git Commit Hooks]", bold=True)
     try:
         hooks_dir = resolve_hooks_dir(repo_root)
-        hook_path = hooks_dir / "post-commit"
     except Exception:
-        hook_path = repo_root / ".git" / "hooks" / "post-commit"
-    hook_str = "Yes" if hook_path.is_file() else "No"
-    click.echo(f"  Hook Installed:  {hook_str}")
-    if hook_path.is_file():
-        click.echo(f"  Status: {click.style('Installed', fg='green')} ({hook_path})")
+        hooks_dir = repo_root / ".git" / "hooks"
+    commit_hook = hooks_dir / "commit-msg"
+    finalize_hook = hooks_dir / "post-commit"
+    if commit_hook.is_file() and "AI_CONTENT_GENERATOR:" in commit_hook.read_text(encoding="utf-8", errors="replace"):
+        click.echo(f"  Commit gate:      {click.style('Installed', fg='green')} ({commit_hook})")
     else:
         click.echo(
-            f"  Status: {click.style('Not Installed', fg='yellow')} "
+            f"  Commit gate:      {click.style('Not Installed', fg='yellow')} "
             "(Run 'ai-content install-hook' or 'npm run ai:content -- install-hook')"
         )
+    click.echo(f"  Finalizer:        {'Installed' if finalize_hook.is_file() else 'Not installed'}")
 
     # Content Inventory
     click.secho("\n[Generated Content Inventory]", bold=True)

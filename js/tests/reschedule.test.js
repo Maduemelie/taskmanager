@@ -196,4 +196,46 @@ describe('Reschedule & Adaptive Replanning Engine (Spec Section 9)', () => {
     expect(deferredIds.includes('low2')).toBe(true);
   });
 
+  it('should handle overrunning in-progress task during replan by realigning or completing', () => {
+    const overrunPlan = {
+      id: 'p-overrun-act',
+      date: '2026-10-06',
+      plannedTasks: [
+        { taskId: 'act-1', scheduledTime: '11:55', estimatedMinutes: 45, status: 'in-progress' },
+        { taskId: 'pend-next', scheduledTime: '12:50', estimatedMinutes: 30, status: 'pending' }
+      ]
+    };
+
+    // User is at 16:55 (overrunning by 255m)
+    // 1. Re-align from now (reset active task start to 16:55)
+    const resetResult = replanRemainingDay({
+      plan: overrunPlan,
+      currentTime: '16:55',
+      dayEndTime: '22:00',
+      bufferMinutes: 10,
+      activeAction: 'reset'
+    });
+
+    const resetActive = resetResult.updatedPlan.plannedTasks.find(t => t.taskId === 'act-1');
+    const resetPending = resetResult.updatedPlan.plannedTasks.find(t => t.taskId === 'pend-next');
+    expect(resetActive.scheduledTime).toBe('16:55');
+    // Pending task should follow after active task (16:55 + 45m + 10m buffer = 17:50)
+    expect(resetPending.scheduledTime).toBe('17:50');
+
+    // 2. Complete active task and cascade from now
+    const finishResult = replanRemainingDay({
+      plan: overrunPlan,
+      currentTime: '16:55',
+      dayEndTime: '22:00',
+      bufferMinutes: 10,
+      activeAction: 'finish'
+    });
+
+    const finishedActive = finishResult.updatedPlan.plannedTasks.find(t => t.taskId === 'act-1');
+    const finishedPending = finishResult.updatedPlan.plannedTasks.find(t => t.taskId === 'pend-next');
+    expect(finishedActive.status).toBe('completed');
+    expect(finishedPending.scheduledTime).toBe('16:55');
+  });
+
 });
+

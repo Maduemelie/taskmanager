@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
@@ -496,4 +497,78 @@ def collect_git_context(
         diff=processed_diff,
         is_merge=meta["is_merge"],
         parent_shas=meta["parent_shas"],
+    )
+
+
+def collect_staged_context(
+    message_file: Path,
+    repo_root: Optional[Path] = None,
+    max_diff_chars: int = 30000,
+    max_diff_lines: int = 500,
+) -> GitCommitContext:
+    """Collect the staged tree and final commit message before commit creation.
+
+    Git does not expose the final commit SHA inside commit-msg hooks. The staged
+    tree SHA is used as a temporary identifier and remapped by post-commit.
+    """
+    root = (repo_root or REPO_ROOT).resolve()
+    env = dict(os.environ)
+
+    def git(*args: str) -> str:
+        proc = subprocess.run(
+            ["git", "--no-pager", *args], cwd=str(root), env=env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", shell=False,
+        )
+        if proc.returncode:
+            raise GitError(proc.stderr.strip() or f"git {' '.join(args)} failed")
+        return proc.stdout
+
+    tree_sha = git("write-tree").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{40}", tree_sha):
+        raise GitError("Could not calculate staged tree identifier")
+
+    try:
+        parent_sha = git("rev-parse", "HEAD").strip().lower()
+        parents = [parent_sha] if re.fullmatch(r"[0-9a-f]{40}", parent_sha) else []
+    except GitError:
+        parents = []
+
+    names = parse_name_status_output(git("diff", "--cached", "--find-renames", "--name-status"))
+    stats = parse_numstat_output(git("diff", "--cached", "--find-renames", "--numstat"))
+    stat_map = {path: (adds, dels, binary) for path, adds, dels, binary in stats}
+    changed_files = []
+    for status, filename, old_filename in names:
+        adds, dels, binary = stat_map.get(filename, (0, 0, False))
+        changed_files.append(FileChangeDetail(
+            filename=filename, status=status, additions=adds, deletions=dels,
+            old_filename=old_filename, is_binary=binary,
+        ))
+
+    diff, _ = truncate_diff(
+        git("diff", "--cached", "--no-color", "--find-renames"), changed_files,
+        max_chars=max_diff_chars, max_lines=max_diff_lines,
+    )
+    message = message_file.read_text(encoding="utf-8")
+    lines = message.splitlines()
+    useful_lines = [line for line in lines if line.strip() and not line.lstrip().startswith("#")]
+    if not useful_lines:
+        raise GitError("Commit message is empty; content generation needs a commit subject")
+    subject = useful_lines[0].strip()
+    body = "\n".join(useful_lines[1:]).strip()
+    try:
+        author = git("config", "user.name").strip()
+    except GitError:
+        author = ""
+    try:
+        email = git("config", "user.email").strip()
+    except GitError:
+        email = ""
+    author = author or os.getenv("GIT_AUTHOR_NAME", "Unknown Author")
+    email = email or os.getenv("GIT_AUTHOR_EMAIL", "")
+    date = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    return GitCommitContext(
+        sha=tree_sha, short_sha=tree_sha[:7], author_name=author, author_email=email,
+        date=date, message_subject=subject, message_body=body, changed_files=changed_files,
+        diff=diff, is_merge=False, parent_shas=parents,
     )

@@ -12,10 +12,13 @@ Implements agent factories for the multi-agent content generation pipeline:
 from __future__ import annotations
 
 import os
+import warnings
 from typing import Optional
 
 from crewai import Agent, LLM
-from ai_content.config import GEMINI_API_KEY, GEMINI_MODEL, is_gemini_configured
+from ai_content.config import (
+    GEMINI_API_KEY, GEMINI_MODEL, GROQ_API_KEY, GROQ_MODEL, is_gemini_configured,
+)
 
 
 def get_llm(
@@ -45,6 +48,46 @@ def get_llm(
         api_key=key.strip(),
         temperature=temperature,
     )
+
+
+def get_free_llm_candidates() -> list[tuple[str, LLM]]:
+    """Return configured free-tier candidates in preferred order: Gemini, then Groq."""
+    if os.getenv("AI_CONTENT_MOCK") == "1":
+        return []
+    candidates: list[tuple[str, LLM]] = []
+    gemini_key = os.getenv("GEMINI_API_KEY") or GEMINI_API_KEY
+    if gemini_key and gemini_key.strip():
+        gemini_model = os.getenv("GEMINI_MODEL") or GEMINI_MODEL or "gemini/gemini-3.8-flash"
+        normalized_gemini_model = gemini_model.removeprefix("gemini/").removeprefix("google/")
+        if normalized_gemini_model != "gemini-3.8-flash":
+            warnings.warn("Ignoring GEMINI_MODEL outside the free-model allowlist; expected gemini-3.8-flash.")
+            gemini_model = ""
+        if gemini_model:
+            if not gemini_model.startswith(("gemini/", "google/")):
+                gemini_model = f"gemini/{gemini_model}"
+            candidates.append(("Gemini", LLM(model=gemini_model, api_key=gemini_key.strip(), temperature=0.2)))
+
+    groq_key = os.getenv("GROQ_API_KEY") or GROQ_API_KEY
+    if groq_key and groq_key.strip():
+        groq_model = os.getenv("GROQ_MODEL") or GROQ_MODEL or "openai/gpt-oss-120b"
+        normalized_groq_model = groq_model.removeprefix("groq/")
+        if normalized_groq_model != "openai/gpt-oss-120b":
+            warnings.warn("Ignoring GROQ_MODEL outside the free-model allowlist; expected openai/gpt-oss-120b.")
+        else:
+            # CrewAI removes the first provider prefix, so repeat `openai/` to
+            # preserve Groq's actual model ID in the outgoing API request.
+            # Use the native OpenAI-compatible client; LiteLLM's `groq/` route
+            # can send cache_breakpoint fields that Groq rejects.
+            candidates.append((
+                "Groq",
+                LLM(
+                    model="openai/openai/gpt-oss-120b",
+                    api_key=groq_key.strip(),
+                    base_url="https://api.groq.com/openai/v1",
+                    temperature=0.2,
+                ),
+            ))
+    return candidates
 
 
 def create_context_analyst_agent(

@@ -128,14 +128,15 @@ export function replanRemainingDay(options = {}) {
     dayEndTime = '22:00',
     bufferMinutes = 10,
     allTasks = [],
-    preferences = {}
+    preferences = {},
+    activeAction = 'reset' // 'reset' | 'finish' | 'defer' | 'keep'
   } = options;
 
   if (!plan || !Array.isArray(plan.plannedTasks)) {
     throw new Error('Valid daily plan is required for replanning');
   }
 
-  // 1. Snapshot and freeze completed tasks
+  // 1. Snapshot tasks
   const completedTasks = plan.plannedTasks.filter(t => t.status === 'completed');
   const inProgressTask = plan.plannedTasks.find(t => t.status === 'in-progress');
   const pendingTasks = plan.plannedTasks.filter(t => t.status === 'pending');
@@ -147,13 +148,36 @@ export function replanRemainingDay(options = {}) {
 
   const dayEndMin = parseTimeToMinutes(dayEndTime);
 
-  // 2. Determine cascade start cursor
+  // Deep clone plan to avoid mutating input directly until confirmed
+  const clonedTasks = plan.plannedTasks.map(t => ({ ...t }));
+  const targetInProgress = clonedTasks.find(t => t.status === 'in-progress');
+
+  // 2. Determine cascade start cursor and handle overrunning active task
   let cascadeStartMin = Math.ceil(nowMin / 5) * 5; // Round to nearest 5m
-  if (inProgressTask) {
-    const inProgStart = parseTimeToMinutes(inProgressTask.scheduledTime);
-    const inProgEnd = inProgStart + (inProgressTask.estimatedMinutes || 30);
-    // If in progress task still running, place pending tasks after it + buffer
-    cascadeStartMin = Math.max(cascadeStartMin, inProgEnd + bufferMinutes);
+  if (targetInProgress) {
+    const inProgStart = parseTimeToMinutes(targetInProgress.scheduledTime);
+    const inProgDur = targetInProgress.estimatedMinutes || 30;
+    const inProgEnd = inProgStart + inProgDur;
+    const isOverrunning = nowMin >= inProgEnd;
+
+    if (isOverrunning) {
+      if (activeAction === 'finish') {
+        targetInProgress.status = 'completed';
+        targetInProgress.actualMinutes = Math.max(inProgDur, nowMin - inProgStart);
+        targetInProgress.completedAt = new Date().toISOString();
+        cascadeStartMin = Math.ceil(nowMin / 5) * 5;
+      } else if (activeAction === 'defer') {
+        targetInProgress.status = 'rescheduled';
+        cascadeStartMin = Math.ceil(nowMin / 5) * 5;
+      } else {
+        // 'reset' - Align in-progress task start to current time so user can continue seamlessly
+        targetInProgress.scheduledTime = formatMinutesToTime(nowMin);
+        cascadeStartMin = Math.ceil((nowMin + inProgDur + bufferMinutes) / 5) * 5;
+      }
+    } else {
+      // In-progress task is still in its scheduled window
+      cascadeStartMin = Math.max(cascadeStartMin, inProgEnd + bufferMinutes);
+    }
   }
 
   // 3. Determine remaining capacity (minutes available between cascadeStart and dayEnd)
@@ -162,8 +186,6 @@ export function replanRemainingDay(options = {}) {
   // 4. Calculate total duration needed for all pending tasks with buffers
   const neededMinutes = pendingTasks.reduce((sum, t) => sum + (t.estimatedMinutes || 30) + bufferMinutes, 0);
 
-  // Deep clone plan to avoid mutating input directly until confirmed
-  const clonedTasks = plan.plannedTasks.map(t => ({ ...t }));
   const taskMap = new Map(allTasks.map(t => [t.id, t]));
 
   // Case A: Everything fits in remaining capacity -> Cascade forward

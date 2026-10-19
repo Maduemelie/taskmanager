@@ -490,8 +490,9 @@ section.view.active {
 .timeline-card {
   margin-left: 14px;
   display: flex;
-  align-items: center;
-  gap: var(--spacing-md);
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--spacing-sm);
   border-left: 3px solid var(--border-color);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
@@ -508,6 +509,7 @@ section.view.active {
 }
 
 .card-header-flex {
+  width: 100%;
   min-width: 0;
 }
 
@@ -527,6 +529,7 @@ section.view.active {
 }
 
 .timeline-card-content {
+  width: 100%;
   flex: 1;
 }
 
@@ -574,15 +577,18 @@ section.view.active {
 .now-playing-bar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--spacing-sm);
-  margin-top: var(--spacing-md);
+  margin-top: var(--spacing-sm);
   padding-top: var(--spacing-sm);
   border-top: 1px dashed var(--border-light, var(--border-color));
+  width: 100%;
 }
 
 .now-playing-btn {
-  flex: 1;
-  padding: 6px 8px;
+  flex: 1 1 auto;
+  min-width: 68px;
+  padding: 6px 10px;
   font-size: 0.75rem;
   font-weight: 700;
   border-radius: var(--radius-sm);
@@ -602,6 +608,42 @@ section.view.active {
   background-color: var(--primary-light, rgba(212, 93, 37, 0.08));
   border-color: var(--primary-color);
   color: var(--primary-color);
+}
+
+.now-playing-btn-primary {
+  background-color: var(--primary-color) !important;
+  color: #FFFFFF !important;
+  border-color: var(--primary-color) !important;
+}
+
+.now-playing-btn-primary:hover {
+  opacity: 0.9;
+}
+
+.now-playing-btn-success {
+  background-color: var(--secondary-color) !important;
+  color: #FFFFFF !important;
+  border-color: var(--secondary-color) !important;
+}
+
+.now-playing-btn-accent {
+  background-color: rgba(217, 119, 6, 0.15) !important;
+  color: var(--accent-color) !important;
+  border-color: var(--accent-color) !important;
+}
+
+/* Overrun Alert Box on Card */
+.overrun-card-alert {
+  width: 100%;
+  margin-top: var(--spacing-xs);
+  padding: 8px 12px;
+  background: rgba(217, 119, 6, 0.12);
+  border-left: 3px solid var(--accent-color);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
 }
 
 /* --- Bucket Grid View --- */

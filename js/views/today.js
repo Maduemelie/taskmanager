@@ -166,43 +166,127 @@ export function initTodayView() {
 async function handleReplanRequest() {
   if (!activePlan || !activePlan.plannedTasks) return;
 
+  const allTasks = await getAllTasks();
   const completedCount = activePlan.plannedTasks.filter(t => t.status === 'completed').length;
   const pendingTasks = activePlan.plannedTasks.filter(t => t.status === 'pending');
+  const inProgressTask = activePlan.plannedTasks.find(t => t.status === 'in-progress');
 
-  if (pendingTasks.length === 0) {
+  if (pendingTasks.length === 0 && !inProgressTask) {
     showToast('All planned tasks are completed or deferred! 🎉', 'info');
     return;
   }
 
+  const now = new Date();
+  const currentMin = now.getHours() * 60 + now.getMinutes();
+
+  let inProgressBanner = '';
+  let inProgOverrunning = false;
+  let inProgName = 'Current Task';
+
+  if (inProgressTask) {
+    const [ih, im] = inProgressTask.scheduledTime.split(':').map(Number);
+    const inProgEnd = ih * 60 + im + (inProgressTask.estimatedMinutes || 30);
+    const overrunMin = Math.max(0, currentMin - inProgEnd);
+    const masterTask = allTasks.find(t => t.id === inProgressTask.taskId);
+    inProgName = (masterTask?.title?.trim()) || (masterTask?.name?.trim()) || (inProgressTask.title?.trim()) || (inProgressTask.name?.trim()) || 'Current Task';
+
+    if (currentMin >= inProgEnd) {
+      inProgOverrunning = true;
+      inProgressBanner = `
+        <div style="background:rgba(217,119,6,0.12); border-left:3px solid var(--accent-color); padding:10px 14px; border-radius:var(--radius-sm); margin-bottom:var(--spacing-md);">
+          <div style="font-weight:700; color:var(--accent-color); font-size:0.85rem;">⚠️ Active Task Overrun</div>
+          <div style="font-size:0.8rem; margin-top:2px; color:var(--text-color);">
+            <strong>"${inProgName}"</strong> was scheduled until ${formatTime12(inProgressTask.scheduledTime)} (+${overrunMin}m late).
+          </div>
+        </div>
+      `;
+    }
+  }
+
   const modalContent = document.createElement('div');
   modalContent.className = 'replan-dialog-content';
-  modalContent.innerHTML = `
-    <p style="color: var(--text-muted); margin-bottom: var(--spacing-md);">
-      You have <strong>${completedCount}</strong> completed and <strong>${pendingTasks.length}</strong> remaining tasks.
-      How would you like to adjust your day?
-    </p>
-    <div style="display:flex; flex-direction:column; gap:8px;">
-      <button id="replan-shift-btn" class="btn btn-primary" style="justify-content:flex-start; text-align:left; padding:12px 16px;">
-        <div>
-          <div style="font-weight:700;">⚡ Quick Cascade (Shift Remaining)</div>
-          <div style="font-size:0.8rem; opacity:0.85;">Align all remaining tasks starting right now</div>
-        </div>
-      </button>
-      <button id="replan-rebalance-btn" class="btn btn-secondary" style="justify-content:flex-start; text-align:left; padding:12px 16px;">
-        <div>
-          <div style="font-weight:700;">🔄 Full Re-Balance</div>
-          <div style="font-size:0.8rem; color:var(--text-muted);">Adjust task allocations and energy profile in Plan view</div>
-        </div>
-      </button>
-      <button id="replan-cancel-btn" class="btn btn-ghost" style="margin-top:4px;">Cancel</button>
-    </div>
-  `;
+
+  if (inProgOverrunning) {
+    modalContent.innerHTML = `
+      ${inProgressBanner}
+      <p style="color: var(--text-muted); margin-bottom: var(--spacing-md);">
+        You have <strong>${pendingTasks.length}</strong> remaining tasks scheduled after this. How would you like to realign?
+      </p>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <button id="replan-keep-working-btn" class="btn btn-primary" style="justify-content:flex-start; text-align:left; padding:12px 16px;">
+          <div>
+            <div style="font-weight:700;">⚡ Keep Working & Shift Schedule</div>
+            <div style="font-size:0.8rem; opacity:0.85;">Reset "${inProgName}" to start right now, cascading remaining tasks after it</div>
+          </div>
+        </button>
+        <button id="replan-finish-btn" class="btn btn-secondary" style="justify-content:flex-start; text-align:left; padding:12px 16px; border-left: 3px solid var(--secondary-color);">
+          <div>
+            <div style="font-weight:700;">✅ Mark "${inProgName}" Done & Shift Rest</div>
+            <div style="font-size:0.8rem; color:var(--text-muted);">Complete current task now and start next task immediately</div>
+          </div>
+        </button>
+        <button id="replan-defer-current-btn" class="btn btn-secondary" style="justify-content:flex-start; text-align:left; padding:12px 16px;">
+          <div>
+            <div style="font-weight:700;">⏭️ Defer "${inProgName}" & Shift Rest</div>
+            <div style="font-size:0.8rem; color:var(--text-muted);">Move current task to bucket and start next task right now</div>
+          </div>
+        </button>
+        <button id="replan-rebalance-btn" class="btn btn-ghost" style="justify-content:flex-start; text-align:left; padding:10px 16px;">
+          <div>
+            <div style="font-weight:700;">🔄 Full Re-Balance</div>
+            <div style="font-size:0.8rem; color:var(--text-muted);">Re-pick tasks and adjust energy in Plan Day view</div>
+          </div>
+        </button>
+        <button id="replan-cancel-btn" class="btn btn-ghost" style="margin-top:4px;">Cancel</button>
+      </div>
+    `;
+  } else {
+    modalContent.innerHTML = `
+      <p style="color: var(--text-muted); margin-bottom: var(--spacing-md);">
+        You have <strong>${completedCount}</strong> completed and <strong>${pendingTasks.length}</strong> remaining tasks.
+        How would you like to adjust your day?
+      </p>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <button id="replan-shift-btn" class="btn btn-primary" style="justify-content:flex-start; text-align:left; padding:12px 16px;">
+          <div>
+            <div style="font-weight:700;">⚡ Quick Cascade (Shift Remaining)</div>
+            <div style="font-size:0.8rem; opacity:0.85;">Align all remaining tasks starting right now</div>
+          </div>
+        </button>
+        <button id="replan-rebalance-btn" class="btn btn-secondary" style="justify-content:flex-start; text-align:left; padding:12px 16px;">
+          <div>
+            <div style="font-weight:700;">🔄 Full Re-Balance</div>
+            <div style="font-size:0.8rem; color:var(--text-muted);">Adjust task allocations and energy profile in Plan view</div>
+          </div>
+        </button>
+        <button id="replan-cancel-btn" class="btn btn-ghost" style="margin-top:4px;">Cancel</button>
+      </div>
+    `;
+  }
 
   openModal("Adjust Today's Schedule", modalContent);
 
+  document.getElementById('replan-keep-working-btn')?.addEventListener('click', async () => {
+    closeModal();
+    await autoCascadeSchedule('reset');
+    showToast('Schedule re-aligned starting from now! ⚡', 'success');
+  });
+
+  document.getElementById('replan-finish-btn')?.addEventListener('click', async () => {
+    closeModal();
+    await autoCascadeSchedule('finish');
+    showToast(`"${inProgName}" completed & schedule re-aligned! 🎉`, 'success');
+  });
+
+  document.getElementById('replan-defer-current-btn')?.addEventListener('click', async () => {
+    closeModal();
+    await autoCascadeSchedule('defer');
+    showToast(`"${inProgName}" deferred & schedule shifted forward! ⏭️`, 'info');
+  });
+
   document.getElementById('replan-shift-btn')?.addEventListener('click', async () => {
     closeModal();
-    await autoCascadeSchedule();
+    await autoCascadeSchedule('reset');
     showToast('Schedule re-aligned to current time! ⚡', 'success');
   });
 
@@ -216,8 +300,9 @@ async function handleReplanRequest() {
 
 /**
  * Auto-cascades or rebalances pending tasks using Section 9 adaptive replanning engine.
+ * @param {string} [activeAction='reset'] 'reset' | 'finish' | 'defer' | 'keep'
  */
-async function autoCascadeSchedule() {
+async function autoCascadeSchedule(activeAction = 'reset') {
   if (!activePlan) return;
 
   const prefs = await getPreferences();
@@ -231,7 +316,8 @@ async function autoCascadeSchedule() {
     dayEndTime: prefs.workHoursEnd || '22:00',
     bufferMinutes: prefs.bufferMinutes || 10,
     allTasks,
-    preferences: prefs
+    preferences: prefs,
+    activeAction
   });
 
   if (replanResult.type === 'cascade') {
@@ -385,6 +471,14 @@ export async function renderTodayView() {
           preferredTime: 'anytime',
           completionHistory: []
         };
+      } else {
+        const validTitle = (taskDetail.title && taskDetail.title.trim()) || 
+                           (taskDetail.name && taskDetail.name.trim()) || 
+                           (slot.title && slot.title.trim()) || 
+                           (slot.name && slot.name.trim()) || 
+                           'Untitled Task';
+        taskDetail.title = validTitle;
+        taskDetail.name = validTitle;
       }
 
       const [h, m] = slot.scheduledTime.split(':').map(Number);
@@ -584,50 +678,137 @@ export async function renderTodayView() {
           if (isOverrun) {
             card.classList.add('is-overrun');
             const overrunMin = currentMin - endMin;
-            const overrunBadge = document.createElement('div');
-            overrunBadge.className = 'overrun-badge';
-            overrunBadge.style.cssText = 'margin-top:6px; padding:3px 8px; background:rgba(217,119,6,0.12); color:var(--accent-color); font-size:0.75rem; font-weight:700; border-radius:var(--radius-sm); display:inline-block;';
-            overrunBadge.textContent = `⚠️ +${overrunMin}m overrun`;
-            card.appendChild(overrunBadge);
-          }
 
-          // Add Now Playing Action Bar
-          const actionArr = [];
-          if (isOverrun) {
-             actionArr.push(`<button type="button" class="now-playing-btn btn-add-time" data-min="15">+15m</button>`);
-             actionArr.push(`<button type="button" class="now-playing-btn btn-add-time" data-min="30">+30m</button>`);
+            if (overrunMin > 30) {
+              // Major Overrun (> 30m): Dedicated alert box with Smart Replan trigger
+              const alertBox = document.createElement('div');
+              alertBox.className = 'overrun-card-alert';
+              alertBox.innerHTML = `
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <span>⚠️</span>
+                  <span style="font-weight:700; font-size:0.8rem; color:var(--accent-color);">+${overrunMin}m overrun</span>
+                </div>
+                <button type="button" class="btn btn-sm btn-replan-now" style="padding:4px 10px; font-size:0.75rem; background:var(--primary-color); color:#fff; border:none; border-radius:var(--radius-sm); font-weight:700; cursor:pointer;">
+                  ⚡ Smart Replan
+                </button>
+              `;
+              alertBox.querySelector('.btn-replan-now').addEventListener('click', (e) => {
+                e.stopPropagation();
+                handleReplanRequest();
+              });
+              card.appendChild(alertBox);
+
+              // Action bar optimized for major overrun: Done, Align from Now, +15m, Defer
+              const actionBar = document.createElement('div');
+              actionBar.className = 'now-playing-bar';
+              actionBar.innerHTML = `
+                <button type="button" class="now-playing-btn now-playing-btn-success btn-done">✅ Done</button>
+                <button type="button" class="now-playing-btn now-playing-btn-primary btn-align-now" title="Reset this task to start now and shift rest">⚡ Start Now</button>
+                <button type="button" class="now-playing-btn btn-add-time" data-min="15">+15m</button>
+                <button type="button" class="now-playing-btn btn-defer">⏭️ Defer</button>
+              `;
+
+              actionBar.querySelector('.btn-done').addEventListener('click', (e) => {
+                e.stopPropagation();
+                callbacks.onComplete(slot.taskId);
+              });
+
+              actionBar.querySelector('.btn-align-now').addEventListener('click', async (e) => {
+                e.stopPropagation();
+                await autoCascadeSchedule('reset');
+                showToast('Schedule re-aligned starting from now! ⚡', 'success');
+              });
+
+              actionBar.querySelector('.btn-add-time').addEventListener('click', async (e) => {
+                e.stopPropagation();
+                slot.estimatedMinutes = (slot.estimatedMinutes || 30) + 15;
+                await updatePlan(activePlan.id, { plannedTasks: activePlan.plannedTasks });
+                showToast('Added 15 minutes ⏱️', 'info');
+                renderTodayView();
+              });
+
+              actionBar.querySelector('.btn-defer').addEventListener('click', (e) => {
+                e.stopPropagation();
+                callbacks.onSkip(slot.taskId);
+              });
+
+              card.appendChild(actionBar);
+            } else {
+              // Minor Overrun (<= 30m)
+              const overrunBadge = document.createElement('div');
+              overrunBadge.className = 'overrun-badge';
+              overrunBadge.style.cssText = 'margin-top:6px; padding:3px 8px; background:rgba(217,119,6,0.12); color:var(--accent-color); font-size:0.75rem; font-weight:700; border-radius:var(--radius-sm); display:inline-block;';
+              overrunBadge.textContent = `⚠️ +${overrunMin}m overrun`;
+              card.appendChild(overrunBadge);
+
+              const actionBar = document.createElement('div');
+              actionBar.className = 'now-playing-bar';
+              actionBar.innerHTML = `
+                <button type="button" class="now-playing-btn btn-add-time" data-min="15">+15m</button>
+                <button type="button" class="now-playing-btn btn-add-time" data-min="30">+30m</button>
+                <button type="button" class="now-playing-btn now-playing-btn-primary btn-smart-replan">⚡ Replan</button>
+                <button type="button" class="now-playing-btn btn-defer">⏭️ Defer</button>
+                <button type="button" class="now-playing-btn now-playing-btn-success btn-done">✅ Done</button>
+              `;
+
+              actionBar.querySelectorAll('.btn-add-time').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                  e.stopPropagation();
+                  const mins = parseInt(btn.dataset.min, 10);
+                  slot.estimatedMinutes = (slot.estimatedMinutes || 30) + mins;
+                  await updatePlan(activePlan.id, { plannedTasks: activePlan.plannedTasks });
+                  showToast(`Added ${mins} minutes ⏱️`, 'info');
+                  renderTodayView();
+                });
+              });
+
+              actionBar.querySelector('.btn-smart-replan').addEventListener('click', (e) => {
+                e.stopPropagation();
+                handleReplanRequest();
+              });
+
+              actionBar.querySelector('.btn-defer').addEventListener('click', (e) => {
+                e.stopPropagation();
+                callbacks.onSkip(slot.taskId);
+              });
+
+              actionBar.querySelector('.btn-done').addEventListener('click', (e) => {
+                e.stopPropagation();
+                callbacks.onComplete(slot.taskId);
+              });
+
+              card.appendChild(actionBar);
+            }
           } else {
-             actionArr.push(`<button type="button" class="now-playing-btn btn-add-time" data-min="15">+15m</button>`);
-          }
-          actionArr.push(`<button type="button" class="now-playing-btn btn-defer">⏭️ Defer</button>`);
-          actionArr.push(`<button type="button" class="now-playing-btn btn-done" style="background:var(--secondary-color); color:#fff; border:none;">✅ Done</button>`);
+            // Normal in-progress task (within schedule)
+            const actionBar = document.createElement('div');
+            actionBar.className = 'now-playing-bar';
+            actionBar.innerHTML = `
+              <button type="button" class="now-playing-btn btn-add-time" data-min="15">+15m</button>
+              <button type="button" class="now-playing-btn btn-defer">⏭️ Defer</button>
+              <button type="button" class="now-playing-btn now-playing-btn-success btn-done">✅ Done</button>
+            `;
 
-          const actionBar = document.createElement('div');
-          actionBar.className = 'now-playing-bar';
-          actionBar.innerHTML = actionArr.join('');
-
-          actionBar.querySelectorAll('.btn-add-time').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
+            actionBar.querySelector('.btn-add-time').addEventListener('click', async (e) => {
               e.stopPropagation();
-              const mins = parseInt(btn.dataset.min, 10);
-              slot.estimatedMinutes = (slot.estimatedMinutes || 30) + mins;
+              slot.estimatedMinutes = (slot.estimatedMinutes || 30) + 15;
               await updatePlan(activePlan.id, { plannedTasks: activePlan.plannedTasks });
-              showToast(`Added ${mins} minutes ⏱️`, 'info');
+              showToast('Added 15 minutes ⏱️', 'info');
               renderTodayView();
             });
-          });
 
-          actionBar.querySelector('.btn-defer').addEventListener('click', (e) => {
-            e.stopPropagation();
-            callbacks.onSkip(slot.taskId);
-          });
+            actionBar.querySelector('.btn-defer').addEventListener('click', (e) => {
+              e.stopPropagation();
+              callbacks.onSkip(slot.taskId);
+            });
 
-          actionBar.querySelector('.btn-done').addEventListener('click', (e) => {
-            e.stopPropagation();
-            callbacks.onComplete(slot.taskId);
-          });
+            actionBar.querySelector('.btn-done').addEventListener('click', (e) => {
+              e.stopPropagation();
+              callbacks.onComplete(slot.taskId);
+            });
 
-          card.appendChild(actionBar);
+            card.appendChild(actionBar);
+          }
         }
       }
 
@@ -1290,6 +1471,7 @@ function showSlippageBanner(minutes, reason) {
       todayHeader.parentNode.insertBefore(banner, todayHeader.nextSibling);
     }
   }
+  banner.style.display = 'flex';
 
   const message = reason || `Behind schedule by <strong>${minutes}m</strong>`;
 

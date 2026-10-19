@@ -22,7 +22,10 @@ def create_context_analyst_task(
     git_context: GitCommitContext,
 ) -> Task:
     """Create the Context Analyst Task to produce a DevelopmentSessionReport."""
-    prompt_context = git_context.to_prompt_context(max_diff_chars=30000)
+    # Leave headroom for instructions and the model's JSON response under
+    # Groq's free-tier 8K tokens-per-minute ceiling. Excerpts are spread across
+    # changed files by GitCommitContext.to_prompt_context.
+    prompt_context = git_context.to_prompt_context(max_diff_chars=18000)
 
     description = f"""Analyze the provided Git commit context and produce a structured DevelopmentSessionReport JSON object.
 
@@ -44,6 +47,7 @@ def create_context_analyst_task(
 - Ensure `summary` and `architecture_impact` are descriptive and exceed 10 characters in length.
 - Ensure `suggested_article_slug` is strictly kebab-case without leading/trailing hyphens.
 - Ground all facts strictly in the commit metadata and diff.
+- The title must be specific to the changed behavior, 15–120 characters, and must not be a generic label or simply repeat the commit subject.
 """
     expected_output = (
         f"A valid JSON object conforming to the DevelopmentSessionReport schema for commit "
@@ -84,8 +88,8 @@ def create_technical_writer_task(
 
 ### Persona & Tone Rules:
 - Write from the perspective of a Senior Software Engineer sharing technical insights with their team or dev community.
-- Tell a narrative story: Focus on *why* this change was necessary, the pain points of the legacy implementation, and *how* the new architecture solves it.
-- **CRITICAL:** DO NOT use robotic boilerplate phrases like "Automated development session analysis", "Modifications across X files", or "Verified atomic writing".
+- Tell a narrative story: Focus on why this change was necessary, the pain points of the legacy implementation, and how the new architecture solves it.
+- CRITICAL: DO NOT use robotic boilerplate phrases like "Automated development session analysis", "Modifications across X files", or "Verified atomic writing".
 - NEVER just regurgitate the commit metadata or file additions/deletions. Instead, explain the actual code changes and the engineering trade-offs behind them.
 
 ### Required Structure & Guidelines:
@@ -104,16 +108,16 @@ def create_technical_writer_task(
    - `## Executive Summary` (A compelling narrative hook explaining the business or technical motivation for this work. Frame the problem before introducing the solution.)
    - `## Architectural Breakdown` (Deep dive into the architectural shifts, component lifecycle changes, UI/UX rationale, or data flow improvements.)
    - `## Implementation Details` (Highlight specific, interesting parts of the code changes. Mention the shift from bad patterns (e.g., float: right) to modern patterns (e.g., flexbox), or state management changes like Optimistic UI.)
-   - `## Key Technical Takeaways` (A bulleted list of profound engineering lessons learned, not just statistics about the commit.)
+   - `## Key Technical Takeaways` (A hyphen-prefixed list of profound engineering lessons learned, not just statistics about the commit.)
 4. Footer citation: `_Commit {git_context.sha} by {git_context.author_name} on {git_context.date}_`.
 
 Ensure the article is technically rigorous, exceeds 500 words, and contains zero hallucinations.
-Do NOT use asterisks (*) for text formatting like bold (**text**) or italics (*text*). Use plain text instead.
+Do NOT use asterisks for Markdown emphasis (bold or italics). Use plain text instead. Use hyphens for list bullets.
 """
     expected_output = (
         f"A complete publication-ready technical Markdown article for commit {git_context.short_sha} "
         f"featuring YAML frontmatter, an H1 heading, '## Executive Summary', '## Architectural Breakdown', "
-        f"'## Changes Overview', '## Key Technical Takeaways', and author citation footer."
+        f"'## Implementation Details', '## Key Technical Takeaways', and author citation footer."
     )
 
     kwargs = {
@@ -155,7 +159,7 @@ def create_journal_writer_task(
    - `## Next Steps` (Immediate follow-up items, verification goals, and upcoming work)
 
 Adopt an honest developer voice. Make sure the short SHA '{git_context.short_sha}' and full SHA are clearly cited. Minimum 30 characters.
-Do NOT use asterisks (*) for text formatting like bold (**text**) or italics (*text*). Use plain text instead.
+Do NOT use asterisks for Markdown emphasis (bold or italics). Use plain text instead. Use hyphens for list bullets.
 """
     expected_output = (
         f"A reflective Markdown developer journal entry starting with '# Development Journal — {git_context.short_sha}', "
@@ -191,7 +195,7 @@ def create_social_writer_task(
    - `4/5`: Main technical takeaway or lesson learned.
    - `5/5`: Call-to-action mentioning the article path `content/articles/{git_context.sha}-<slug>.md` and hashtags #devlog #coding #ai.
    
-CRITICAL: Do NOT use asterisks (*) for text formatting like bold (**text**) or italics (*text*). Use plain text instead.
+CRITICAL: Do NOT use asterisks for Markdown emphasis (bold or italics). Use plain text instead.
 """
     expected_output = (
         f"A 5-tweet Markdown social thread for commit {git_context.short_sha} with tweets numbered "
@@ -226,7 +230,7 @@ def create_quality_reviewer_task(
 Inspect the drafts against the DevelopmentSessionReport and Git commit metadata:
 1. Technical Article:
    - Must have a top-level H1 heading: `# <suggested_article_title>` or `# {git_context.message_subject}`.
-   - Must contain exact section headings: '## Executive Summary', '## Architectural Breakdown', '## Changes Overview', '## Key Technical Takeaways'.
+   - Must contain exact section headings: '## Executive Summary', '## Architectural Breakdown', '## Implementation Details', '## Key Technical Takeaways'.
    - Ensure all cited files exist in the commit: {changed_files_summary}.
 2. Dev Journal:
    - Must begin with '# Development Journal — {git_context.short_sha}'.
@@ -238,7 +242,7 @@ Inspect the drafts against the DevelopmentSessionReport and Git commit metadata:
 4. Markdown Quality:
    - Ensure all code blocks are properly fenced with triple backticks and language tags.
    - Ensure no broken links or malformed markdown.
-   - CRITICAL: Do NOT use asterisks (*) for text formatting like bold (**text**) or italics (*text*) in the article, journal, or social thread. Use plain text instead.
+   - CRITICAL: Do NOT use asterisks for Markdown emphasis (bold or italics) in the article, journal, or social thread. Use plain text instead. Use hyphens for list bullets.
 
 Format your output with clear delimiter blocks so the publications can be extracted and written to disk:
 ===ARTICLE===

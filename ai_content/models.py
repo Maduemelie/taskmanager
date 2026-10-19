@@ -335,10 +335,24 @@ class GitCommitContext(BaseModel):
 
         diff_content = self.diff
         if max_diff_chars is not None and len(diff_content) > max_diff_chars:
-            diff_content = (
-                diff_content[:max_diff_chars]
-                + f"\n\n... [DIFF TRUNCATED: {len(self.diff)} characters total, showing first {max_diff_chars} characters] ..."
-            )
+            # Keep a representative excerpt from every changed file. A simple
+            # prefix cut can omit later files entirely, while equal remaining
+            # budgets let small diffs return unused space to larger ones.
+            sections = re.split(r"(?=^diff --git )", diff_content, flags=re.MULTILINE)
+            sections = [section for section in sections if section]
+            excerpts: List[str] = []
+            remaining = max_diff_chars
+            for index, section in enumerate(sections):
+                sections_left = len(sections) - index
+                quota = remaining // sections_left
+                if len(section) <= quota:
+                    excerpt = section
+                else:
+                    marker = f"\n... [file diff excerpt omitted; {len(section)} characters total] ...\n"
+                    excerpt = section[:max(0, quota - len(marker))] + marker
+                excerpts.append(excerpt)
+                remaining -= len(excerpt)
+            diff_content = "".join(excerpts)
 
         parents_str = (
             ", ".join(f"`{p[:7]}`" for p in self.parent_shas)
@@ -538,17 +552,27 @@ class DevelopmentSessionReport(BaseModel):
         json_content = self.model_dump_json(indent=indent)
 
         if atomic:
-            temp_filename = f"{dest_path.name}.tmp.{os.getpid()}_{time.time_ns()}"
+            temp_filename = f".tmp_{os.getpid()}_{time.time_ns() % 1000000}"
             temp_path = dest_path.parent / temp_filename
+
+            str_temp = str(temp_path)
+            str_dest = str(dest_path)
+            if os.name == "nt":
+                if not str_temp.startswith("\\\\?\\"):
+                    str_temp = f"\\\\?\\{str_temp}"
+                if not str_dest.startswith("\\\\?\\"):
+                    str_dest = f"\\\\?\\{str_dest}"
+
             try:
-                temp_path.write_text(json_content, encoding="utf-8")
-                temp_path.replace(dest_path)
+                with open(str_temp, "w", encoding="utf-8") as f:
+                    f.write(json_content)
+                os.replace(str_temp, str_dest)
             except Exception:
-                if temp_path.exists():
-                    try:
-                        temp_path.unlink()
-                    except OSError:
-                        pass
+                try:
+                    if os.path.exists(str_temp):
+                        os.unlink(str_temp)
+                except OSError:
+                    pass
                 raise
         else:
             dest_path.write_text(json_content, encoding="utf-8")

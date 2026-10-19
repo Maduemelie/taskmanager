@@ -52,10 +52,13 @@ def ensure_directories() -> None:
 
 
 # 4. Gemini Settings
-DEFAULT_GEMINI_MODEL: str = "gemini/gemini-2.5-flash"
+DEFAULT_GEMINI_MODEL: str = "gemini/gemini-3.8-flash"
+DEFAULT_GROQ_MODEL: str = "openai/gpt-oss-120b"
 
 GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL: str = os.getenv("GROQ_MODEL", DEFAULT_GROQ_MODEL)
 
 
 def is_gemini_configured() -> bool:
@@ -63,10 +66,17 @@ def is_gemini_configured() -> bool:
     return bool(GEMINI_API_KEY and GEMINI_API_KEY.strip())
 
 
+def is_any_free_provider_configured() -> bool:
+    """Return True when a supported free-tier provider key is configured."""
+    return is_gemini_configured() or bool(GROQ_API_KEY and GROQ_API_KEY.strip())
+
+
 def reload_config() -> None:
     """Reload environment variables from .env file and update module-level settings."""
-    global GEMINI_API_KEY, GEMINI_MODEL
+    global GEMINI_API_KEY, GEMINI_MODEL, GROQ_API_KEY, GROQ_MODEL
     if load_dotenv is not None and ENV_PATH.is_file():
         load_dotenv(dotenv_path=ENV_PATH, override=True)
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
     GEMINI_MODEL = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+    GROQ_MODEL = os.getenv("GROQ_MODEL", DEFAULT_GROQ_MODEL)
