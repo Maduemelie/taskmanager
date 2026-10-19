@@ -38,6 +38,23 @@
             🔄 Replan
           </button>
         </header>
+
+        <section id="today-unplanned-hub" class="today-unplanned-hub hidden" aria-labelledby="today-hub-title">
+          <div class="today-hub-heading">
+            <div>
+              <p class="today-eyebrow">MAKE SPACE FOR WHAT MATTERS</p>
+              <h2 id="today-hub-title">Shape your day</h2>
+              <p>See your available capacity, then build a schedule that fits.</p>
+            </div>
+          </div>
+          <div class="today-capacity-card" aria-label="Today's capacity overview">
+            <div class="today-capacity-metric"><strong id="today-metric-avail-time">--</strong><span>Available</span></div>
+            <div class="today-capacity-metric"><strong id="today-metric-unscheduled-count">0</strong><span>Tasks queued</span></div>
+            <div class="today-capacity-metric"><strong id="today-metric-priority-count">0</strong><span>High priority</span></div>
+            <div class="today-capacity-metric"><strong id="today-metric-habits-count">0</strong><span>Habits due</span></div>
+          </div>
+          <button id="today-plan-hero-btn" class="btn btn-primary today-plan-hero-btn">Plan My Day <span aria-hidden="true">→</span></button>
+        </section>
         
         <!-- Daily Flow Progress Summary (Section 6.2) -->
         <div class="today-progress-container">
@@ -71,7 +88,6 @@
           <div id="timeline-empty-state" class="bucket-empty-state" style="border-style: solid; padding: var(--spacing-xxl);">
             <h3>Your day is clear!</h3>
             <p style="margin-top: 8px; margin-bottom: var(--spacing-md);">No tasks scheduled for today.</p>
-            <button id="timeline-plan-now-btn" class="btn btn-primary">Plan My Day ✨</button>
           </div>
         </div>
 
@@ -574,10 +590,6 @@
       <a href="#today" class="nav-item active" id="nav-today">
         <span class="nav-icon">📅</span>
         <span>Today</span>
-      </a>
-      <a href="#plan" class="nav-item" id="nav-plan">
-        <span class="nav-icon">✨</span>
-        <span>Plan</span>
       </a>
       <a href="#bucket" class="nav-item" id="nav-bucket">
         <span class="nav-icon">📋</span>

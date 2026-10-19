@@ -23,6 +23,12 @@ let activePlan = null;
 let timeIndicatorInterval = null;
 const undoStack = [];
 
+function escapeHtml(value) {
+  return String(value).replace(/[&<>\"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;'
+  })[char]);
+}
+
 /**
  * Pushes an undo action to the stack and shows the undo toast.
  * @param {Object} action - { taskId, description, previousStatus, previousTime, previousActualMinutes, previousCompletedAt }
@@ -321,20 +327,23 @@ export async function renderTodayView() {
   if (!container) return;
 
   activePlan = await getTodayPlan();
+  const unplannedHub = document.getElementById('today-unplanned-hub');
+  const progressContainer = document.querySelector('#today-view .today-progress-container');
+  const replanButton = document.getElementById('today-replan-btn');
+  const planHeroButton = document.getElementById('today-plan-hero-btn');
+  if (unplannedHub) unplannedHub.classList.toggle('hidden', Boolean(activePlan));
+  if (progressContainer) progressContainer.classList.toggle('hidden', !activePlan);
+  if (replanButton) replanButton.classList.toggle('hidden', !activePlan);
+  if (planHeroButton) planHeroButton.onclick = () => { window.location.hash = '#plan'; };
   
   if (!activePlan) {
+    await updateTodayCapacitySummary();
     // Render Empty State
     container.innerHTML = `
-      <div id="timeline-empty-state" class="bucket-empty-state" style="border-style: solid; padding: var(--spacing-xxl);">
-        <h3>Your day is clear!</h3>
-        <p style="margin-top: 8px; margin-bottom: var(--spacing-md);">No tasks scheduled for today.</p>
-        <button id="timeline-plan-now-btn" class="btn btn-primary">Plan My Day ✨</button>
+      <div id="timeline-empty-state" class="today-empty-state">
+        <span aria-hidden="true">☀️</span><p>Your schedule will appear here after you plan your day.</p>
       </div>
     `;
-    
-    document.getElementById('timeline-plan-now-btn').addEventListener('click', () => {
-      window.location.hash = '#plan';
-    });
 
     if (progressText) progressText.textContent = '0%';
     if (ringFill) ringFill.style.strokeDashoffset = '113';
@@ -367,7 +376,8 @@ export async function renderTodayView() {
         // Fallback mock details for quick-added unplanned tasks
         taskDetail = {
           id: slot.taskId,
-          name: slot.name || 'Unplanned Task',
+          name: slot.name || slot.title || 'Unplanned Task',
+          title: slot.title || slot.name || 'Unplanned Task',
           bucket: slot.bucket || 'unplanned',
           estimatedMinutes: slot.estimatedMinutes,
           priority: 2,
@@ -682,6 +692,24 @@ export async function renderTodayView() {
   checkScheduleSlippage();
 }
 
+async function updateTodayCapacitySummary() {
+  const allTasks = await getAllTasks();
+  const tasks = allTasks.filter(task => task.status !== 'inbox' && task.status !== 'completed' && task.status !== 'archived' && task.isArchived !== true);
+  const prefs = await getPreferences();
+  const availableMinutes = Math.max(0, Number(prefs.defaultCapacity) || 0);
+  const availableText = `${Math.floor(availableMinutes / 60)}h ${availableMinutes % 60}m`;
+  const values = {
+    'today-metric-avail-time': availableText,
+    'today-metric-unscheduled-count': String(tasks.length),
+    'today-metric-priority-count': String(tasks.filter(task => task.priority >= 70 || task.priority >= 4).length),
+    'today-metric-habits-count': String(tasks.filter(task => task.type === 'habit' || task.recurrence || task.isHabit).length)
+  };
+  Object.entries(values).forEach(([id, value]) => {
+    const element = document.getElementById(id);
+    if (element) element.textContent = value;
+  });
+}
+
 /**
  * Renders the Section 6.3 NOW Card into #today-now-card-container.
  */
@@ -694,21 +722,19 @@ function renderNowCard(activeSlots, taskMap, currentMin) {
     return;
   }
 
-  // 1. Check for a task currently within its active time window
-  let nowSlot = activeSlots.find(s => {
+  // Explicit execution state wins over the planned time window. Tasks often
+  // overrun or start late, so schedule position alone is not authoritative.
+  let nowSlot = activeSlots.find(s => s.status === 'in-progress');
+  let isUpcoming = !nowSlot;
+
+  if (!nowSlot) nowSlot = activeSlots.find(s => {
     const [h, m] = s.scheduledTime.split(':').map(Number);
     const start = h * 60 + m;
     const end = start + (s.estimatedMinutes || 30);
     return currentMin >= start && currentMin < end && s.status !== 'completed' && s.status !== 'skipped';
   });
 
-  // 2. If no task currently inside its window, find an in-progress task
-  if (!nowSlot) {
-    nowSlot = activeSlots.find(s => s.status === 'in-progress');
-  }
-
-  // 3. Fallback: find the next upcoming pending task
-  let isUpcoming = false;
+  // Fall back to the next pending task when nothing is active now.
   if (!nowSlot) {
     nowSlot = activeSlots.find(s => s.status === 'pending');
     if (nowSlot) isUpcoming = true;
@@ -718,14 +744,16 @@ function renderNowCard(activeSlots, taskMap, currentMin) {
   if (!nowSlot) {
     const allCompleted = activeSlots.every(s => s.status === 'completed' || s.status === 'skipped');
     if (allCompleted) {
+      const completedCount = activeSlots.filter(s => s.status === 'completed').length;
+      const skippedCount = activeSlots.length - completedCount;
       container.innerHTML = `
         <div class="now-card" style="border-color: var(--secondary-color); background: rgba(94, 149, 96, 0.08);">
           <div class="now-header">
             <span class="now-tag" style="background: var(--secondary-color);">🎉 DAY WRAP-UP</span>
           </div>
-          <div class="now-title">All tasks completed!</div>
+          <div class="now-title">${completedCount === activeSlots.length ? 'All tasks completed!' : 'Your day is wrapped up.'}</div>
           <p style="font-size: 0.85rem; color: var(--text-muted); margin: 4px 0 0 0;">
-            Great execution today. Time to relax and recharge.
+            ${completedCount} completed${skippedCount ? ` · ${skippedCount} deferred` : ''}. Take a moment to reset.
           </p>
           <div style="margin-top: 12px;">
             <button id="btn-daily-reflection" class="btn btn-primary" style="width: 100%;">📝 Reflect on Today</button>
@@ -755,10 +783,13 @@ function renderNowCard(activeSlots, taskMap, currentMin) {
     title: nowSlot.name || nowSlot.title || 'Focus Task',
     bucket: nowSlot.bucket || 'work'
   };
-  const taskTitle = taskDetail.title || taskDetail.name || 'Focus Task';
+  const taskTitle = escapeHtml(taskDetail.title || taskDetail.name || nowSlot.title || nowSlot.name || 'Focus Task');
 
-  const remainingMin = Math.max(0, endMin - currentMin);
-  const elapsedMin = Math.max(0, currentMin - startMin);
+  const startedAt = nowSlot.startedAt ? new Date(nowSlot.startedAt) : null;
+  const elapsedMin = isUpcoming ? 0 : (startedAt && !Number.isNaN(startedAt.getTime())
+    ? Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 60000))
+    : Math.max(0, currentMin - startMin));
+  const remainingMin = Math.max(0, duration - elapsedMin);
   const progressPct = isUpcoming ? 0 : Math.min(100, Math.max(5, Math.round((elapsedMin / duration) * 100)));
 
   const tagHtml = isUpcoming
@@ -767,15 +798,16 @@ function renderNowCard(activeSlots, taskMap, currentMin) {
 
   const remainingText = isUpcoming
     ? `Starts in ${Math.max(0, startMin - currentMin)}m (${duration}m planned)`
-    : `${remainingMin}m remaining`;
+    : `${elapsedMin}m elapsed · ${remainingMin}m remaining`;
 
   container.innerHTML = `
-    <div class="now-card">
+    <div class="now-card${nowSlot.status === 'in-progress' ? ' now-card-live' : ''}">
       <div class="now-header">
         ${tagHtml}
         <span class="now-time-range">${timeRangeStr}</span>
       </div>
       <div class="now-title">${taskTitle}</div>
+      <div class="now-task-context"><span class="now-context-dot"></span>${escapeHtml(taskDetail.bucket || nowSlot.bucket || 'Focus')}</div>
       <div class="now-progress-track">
         <div class="now-progress-fill" style="width: ${progressPct}%;"></div>
       </div>

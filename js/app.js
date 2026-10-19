@@ -61,7 +61,7 @@ const routes = {
 // Bottom Navigation items mapping: section ID -> nav link ID
 const navMapping = {
   'today-view': 'nav-today',
-  'plan-view': 'nav-plan',
+  'plan-view': 'nav-today',
   'bucket-view': 'nav-bucket',
   'settings-view': 'nav-settings'
 };

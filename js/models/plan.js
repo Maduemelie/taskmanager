@@ -32,6 +32,9 @@ export async function createPlan(dateStr, capacity, plannedTasks) {
   // Format plannedTasks with defaults
   const formattedTasks = plannedTasks.map(task => ({
     taskId: task.taskId,
+    ...(task.name ? { name: task.name } : {}),
+    ...(task.title ? { title: task.title } : {}),
+    ...(task.bucket ? { bucket: task.bucket } : {}),
     scheduledTime: task.scheduledTime || '09:00',
     estimatedMinutes: task.estimatedMinutes || 30,
     status: 'pending', // pending | in-progress | completed | skipped | rescheduled
@@ -61,6 +64,18 @@ export async function createPlan(dateStr, capacity, plannedTasks) {
  * @returns {Promise<number>}
  */
 export async function updatePlan(planId, changes) {
+  if (Array.isArray(changes.plannedTasks)) {
+    const plannedTasks = await Promise.all(changes.plannedTasks.map(async task => {
+      const masterTask = task.taskId ? await db.tasks.get(task.taskId) : null;
+      return {
+        ...task,
+        name: task.name || masterTask?.name || masterTask?.title || '',
+        title: task.title || masterTask?.title || masterTask?.name || '',
+        bucket: task.bucket || masterTask?.bucket || ''
+      };
+    }));
+    changes = { ...changes, plannedTasks };
+  }
   const updatedChanges = {
     ...changes,
     lastModifiedAt: new Date().toISOString()
@@ -79,6 +94,9 @@ export async function addTaskToPlan(planId, taskEntry) {
 
   const newTask = {
     taskId: taskEntry.taskId,
+    ...(taskEntry.name ? { name: taskEntry.name } : {}),
+    ...(taskEntry.title ? { title: taskEntry.title } : {}),
+    ...(taskEntry.bucket ? { bucket: taskEntry.bucket } : {}),
     scheduledTime: taskEntry.scheduledTime || '12:00',
     estimatedMinutes: taskEntry.estimatedMinutes || 30,
     status: 'pending',
@@ -130,6 +148,7 @@ export async function markTaskStatus(planId, taskId, status, actualMinutes = nul
       return {
         ...t,
         status,
+        startedAt: status === 'in-progress' ? (t.startedAt || new Date().toISOString()) : null,
         actualMinutes: actualMinutes || t.estimatedMinutes,
         completedAt: isCompleted ? new Date().toISOString() : t.completedAt
       };

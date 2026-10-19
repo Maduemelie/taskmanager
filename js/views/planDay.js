@@ -281,6 +281,9 @@ export function initPlanDayView() {
 
       const plannedTasksInput = selectedTasks.map(item => ({
         taskId: item.task.id || item.taskId,
+        name: item.task.name || item.task.title || '',
+        title: item.task.title || item.task.name || '',
+        bucket: item.task.bucket || '',
         estimatedMinutes: item.task.estimatedMinutes,
         scheduledTime: item.scheduledTime,
         isUnplanned: false

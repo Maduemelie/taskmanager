@@ -102,11 +102,13 @@ export function renderTimeSlot(slotEntry, task, callbacks = {}) {
   // Create a flex header wrapper for title + status badges
   const cardHeaderFlex = document.createElement('div');
   cardHeaderFlex.className = 'card-header-flex';
-  cardHeaderFlex.style.cssText = 'display:flex; align-items:flex-start; justify-content:space-between; gap:8px;';
+  cardHeaderFlex.style.cssText = 'display:flex; align-items:flex-start; justify-content:space-between; gap:8px; min-width:0;';
 
   // Move the title into the flex header
   const titleEl = headerContainer.querySelector('.task-card-title');
   if (titleEl) {
+    titleEl.style.flex = '1 1 auto';
+    titleEl.style.minWidth = '0';
     cardHeaderFlex.appendChild(titleEl);
   }
 
