@@ -11,6 +11,7 @@ import { initPlanDayView, renderPlanDayView } from './views/planDay.js';
 import { initBucketView, renderBucketView } from './views/bucket.js';
 import { initAddTaskView, renderAddTaskView } from './views/addTask.js';
 import { initSettingsView, renderSettingsView } from './views/settings.js';
+import { initHabitsView, renderHabitsView } from './views/habits.js';
 import { initNavigation } from './components/nav.js';
 import { initInstallPrompt } from './components/installPrompt.js';
 import { checkOnboarding } from './components/onboarding.js';
@@ -54,6 +55,7 @@ const routes = {
   '#today': 'today-view',
   '#plan': 'plan-view',
   '#bucket': 'bucket-view',
+  '#habits': 'habits-view',
   '#settings': 'settings-view',
   '#add-task': 'add-task-view'
 };
@@ -63,6 +65,7 @@ const navMapping = {
   'today-view': 'nav-today',
   'plan-view': 'nav-today',
   'bucket-view': 'nav-bucket',
+  'habits-view': 'nav-habits',
   'settings-view': 'nav-settings'
 };
 
@@ -71,6 +74,7 @@ const viewRenderers = {
   'today-view': renderTodayView,
   'plan-view': renderPlanDayView,
   'bucket-view': renderBucketView,
+  'habits-view': renderHabitsView,
   'settings-view': renderSettingsView,
   'add-task-view': renderAddTaskView
 };
@@ -164,6 +168,7 @@ async function init() {
   initTodayView();
   initPlanDayView();
   initBucketView();
+  initHabitsView();
   initAddTaskView();
   initSettingsView();
 

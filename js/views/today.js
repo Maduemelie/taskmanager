@@ -9,8 +9,6 @@ import { openModal, closeModal } from '../components/modal.js';
 import { 
   addUnplannedTask, 
   rescheduleRemaining, 
-  suggestDeferrals, 
-  applyDeferrals,
   evaluateReplanTrigger,
   replanRemainingDay
 } from '../engine/reschedule.js';
@@ -819,15 +817,17 @@ export async function renderTodayView() {
     const slots = container.querySelectorAll('.timeline-slot, .timeline-buffer');
     stagger(slots, (el, delay) => slideUp(el, 15, 300, delay));
   }
-  const totalTasks = activeSlots.length;
-  const completedSlots = activeSlots.filter(t => t.status === 'completed');
+  const plannedSlots = activeSlots.filter(t => t.status !== 'skipped');
+  const skippedCount = activeSlots.filter(t => t.status === 'skipped').length;
+  const totalTasks = plannedSlots.length;
+  const completedSlots = plannedSlots.filter(t => t.status === 'completed');
   const completedTasks = completedSlots.length;
 
-  const totalPlannedMinutes = activeSlots.reduce((sum, t) => sum + (t.estimatedMinutes || 0), 0);
-  const completedFocusMinutes = completedSlots.reduce((sum, t) => sum + (t.actualMinutes || t.estimatedMinutes || 0), 0);
+  const totalPlannedMinutes = plannedSlots.reduce((sum, t) => sum + (t.estimatedMinutes || 0), 0);
+  const completedFocusMinutes = completedSlots.reduce((sum, t) => sum + (t.actualMinutes ?? t.estimatedMinutes ?? 0), 0);
 
-  const totalWeightedPriority = activeSlots.reduce((sum, t) => sum + ((t.priority || 50) * (t.estimatedMinutes || 30)), 0);
-  const completedWeightedPriority = completedSlots.reduce((sum, t) => sum + ((t.priority || 50) * (t.actualMinutes || t.estimatedMinutes || 30)), 0);
+  const totalWeightedPriority = plannedSlots.reduce((sum, t) => sum + ((t.priority || 50) * (t.estimatedMinutes || 30)), 0);
+  const completedWeightedPriority = completedSlots.reduce((sum, t) => sum + ((t.priority || 50) * (t.actualMinutes ?? t.estimatedMinutes ?? 30)), 0);
   const priorityCoverage = totalWeightedPriority > 0 ? Math.round((completedWeightedPriority / totalWeightedPriority) * 100) : 0;
 
   const percentage = totalPlannedMinutes > 0 
@@ -859,7 +859,7 @@ export async function renderTodayView() {
     }
   }
 
-  if (progressCount) progressCount.textContent = `${completedTasks}/${totalTasks} done`;
+  if (progressCount) progressCount.textContent = `${completedTasks}/${totalTasks} done${skippedCount ? ` · ${skippedCount} moved` : ''}`;
 
   // Render Section 6.3 NOW Card
   renderNowCard(activeSlots, taskMap, currentMin);
@@ -1020,6 +1020,13 @@ function renderNowCard(activeSlots, taskMap, currentMin) {
   const startBtn = container.querySelector('.btn-now-start');
   if (startBtn) {
     startBtn.addEventListener('click', async () => {
+      if (taskDetail.isHabit || taskDetail.type === 'habit') {
+        showHabitCalendarModal(taskDetail, activePlan.id, async () => {
+          await markTaskStatus(activePlan.id, nowSlot.taskId, 'completed', 0);
+          renderTodayView();
+        });
+        return;
+      }
       triggerHaptic(10);
       await markTaskStatus(activePlan.id, nowSlot.taskId, 'in-progress');
       showToast('Focus session started! ⚡', 'info');
@@ -1030,6 +1037,13 @@ function renderNowCard(activeSlots, taskMap, currentMin) {
   const doneBtn = container.querySelector('.btn-now-done');
   if (doneBtn) {
     doneBtn.addEventListener('click', () => {
+      if (taskDetail.isHabit || taskDetail.type === 'habit') {
+        showHabitCalendarModal(taskDetail, activePlan.id, async () => {
+          await markTaskStatus(activePlan.id, nowSlot.taskId, 'completed', 0);
+          renderTodayView();
+        });
+        return;
+      }
       showCompletionMinutesModal(nowSlot.taskId, nowSlot.estimatedMinutes, nowSlot, taskDetail);
     });
   }
@@ -1522,7 +1536,7 @@ async function showDailyReflectionModal(plan) {
     plan.plannedTasks.forEach(t => {
       estimatedTotal += (t.estimatedMinutes || 0);
       if (t.status === 'completed') {
-        actualTotal += (t.actualMinutes || t.estimatedMinutes || 0);
+        actualTotal += (t.actualMinutes ?? t.estimatedMinutes ?? 0);
       }
     });
   }

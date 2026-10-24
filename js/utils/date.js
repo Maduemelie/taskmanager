@@ -76,22 +76,6 @@ export function formatTime12(hoursOrTimeStr, minutes) {
 }
 
 /**
- * Returns time of day period (morning/afternoon/evening) for a given Date
- * @param {Date} [date] Optional Date object, defaults to now 
- * @returns {"morning" | "afternoon" | "evening"}
- */
-export function getTimeOfDay(date = new Date()) {
-  const hour = date.getHours();
-  if (hour >= 5 && hour < 12) {
-    return 'morning';
-  } else if (hour >= 12 && hour < 17) {
-    return 'afternoon';
-  } else {
-    return 'evening';
-  }
-}
-
-/**
  * Converts a YYYY-MM-DD date string into a friendly readable format
  * @param {string} dateStr 
  * @returns {string} e.g. "Today", "Yesterday", "Saturday, Aug 22"

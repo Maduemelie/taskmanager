@@ -92,6 +92,8 @@ export async function addTaskToPlan(planId, taskEntry) {
   const plan = await db.dailyPlans.get(planId);
   if (!plan) throw new Error(`Plan ${planId} not found`);
 
+  if (plan.plannedTasks.some(task => task.taskId === taskEntry.taskId)) return false;
+
   const newTask = {
     taskId: taskEntry.taskId,
     ...(taskEntry.name ? { name: taskEntry.name } : {}),
@@ -107,6 +109,7 @@ export async function addTaskToPlan(planId, taskEntry) {
 
   const updatedTasks = [...plan.plannedTasks, newTask];
   await updatePlan(planId, { plannedTasks: updatedTasks });
+  return true;
 }
 
 /**
@@ -142,14 +145,14 @@ export async function markTaskStatus(planId, taskId, status, actualMinutes = nul
       
       if (isCompleted && t.status !== 'completed') {
         // Record in the task master list (updates history, streaks)
-        completionData = await recordCompletion(taskId, actualMinutes || t.estimatedMinutes);
+        completionData = await recordCompletion(taskId, actualMinutes ?? t.estimatedMinutes);
       }
 
       return {
         ...t,
         status,
         startedAt: status === 'in-progress' ? (t.startedAt || new Date().toISOString()) : null,
-        actualMinutes: actualMinutes || t.estimatedMinutes,
+        actualMinutes: actualMinutes ?? t.estimatedMinutes,
         completedAt: isCompleted ? new Date().toISOString() : t.completedAt
       };
     }

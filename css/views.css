@@ -653,6 +653,212 @@ section.view.active {
   gap: var(--spacing-lg);
 }
 
+.task-filter-control {
+  margin-bottom: var(--spacing-lg);
+  max-width: 360px;
+}
+
+.task-filter-select {
+  width: 100%;
+  min-height: 44px;
+  background: var(--surface-color);
+}
+
+.task-card-actions {
+  align-items: stretch;
+}
+
+.task-card-action-btn {
+  min-height: 36px;
+  padding: 5px 9px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.task-card-action-btn:hover {
+  color: var(--text-color);
+  border-color: var(--text-muted);
+}
+
+.schedule-task-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.schedule-task-copy {
+  margin-bottom: var(--spacing-sm);
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.task-schedule-inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(105px, 0.7fr);
+  gap: var(--spacing-sm);
+}
+
+.task-schedule-hint {
+  margin-top: var(--spacing-xs);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.plan-date-control {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  max-width: 360px;
+  margin-top: var(--spacing-md);
+}
+
+.plan-date-control .form-label {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.existing-plan-task-list {
+  width: 100%;
+  max-width: 360px;
+  margin-top: var(--spacing-lg);
+  text-align: left;
+}
+
+.existing-plan-task-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 0.9rem;
+}
+
+.existing-plan-task-row span:first-child {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.existing-plan-remove-btn {
+  min-height: 32px;
+  padding: 2px 8px;
+  font-size: 0.75rem;
+}
+
+.habits-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+}
+
+.habits-eyebrow {
+  margin-bottom: var(--spacing-xs);
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.habits-count {
+  margin-top: var(--spacing-xs);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.habits-filter {
+  width: auto;
+  max-width: 150px;
+  min-height: 42px;
+  background: var(--surface-color);
+}
+
+.habits-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.habit-list-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  background: var(--surface-color);
+}
+
+.habit-list-details h2 {
+  font-size: 1rem;
+}
+
+.habit-list-details p {
+  margin-top: var(--spacing-xs);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.habit-list-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.habit-history-btn,
+.habit-checkin-btn {
+  min-height: 40px;
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+
+.habit-done-label,
+.habit-rest-label {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.habit-done-label {
+  color: var(--secondary-color);
+}
+
+.habit-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xl);
+  border-radius: var(--radius-lg);
+  background: var(--surface-color);
+}
+
+.habit-empty-state p {
+  color: var(--text-muted);
+}
+
+.habits-add-link {
+  align-self: flex-start;
+  margin-top: var(--spacing-md);
+}
+
+@media (max-width: 480px) {
+  .habit-list-card {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .habit-list-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
 .bucket-section {
   display: flex;
   flex-direction: column;
@@ -665,6 +871,11 @@ section.view.active {
   align-items: center;
   padding: var(--spacing-xs) 0;
   cursor: pointer;
+}
+
+.bucket-header .badge {
+  background: var(--border-light);
+  color: var(--text-muted);
 }
 
 .bucket-title-container {

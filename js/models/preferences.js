@@ -79,23 +79,6 @@ export async function addBucket(name, emoji, color) {
 }
 
 /**
- * Updates a bucket definition.
- * @param {string} id 
- * @param {Object} changes 
- * @returns {Promise<void>}
- */
-export async function updateBucket(id, changes) {
-  const prefs = await getPreferences();
-  const updatedBuckets = prefs.buckets.map(b => {
-    if (b.id === id) {
-      return { ...b, ...changes };
-    }
-    return b;
-  });
-  await updatePreferences({ buckets: updatedBuckets });
-}
-
-/**
  * Deletes a bucket category.
  * @param {string} id 
  * @returns {Promise<void>}

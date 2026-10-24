@@ -1,25 +1,6 @@
 /* js/utils/animate.js */
 
 /**
- * Animates an element by fading it in.
- * @param {HTMLElement} el The element to animate
- * @param {number} [duration] Duration in milliseconds (default 300)
- * @param {number} [delay] Delay before starting in milliseconds (default 0)
- */
-export function fadeIn(el, duration = 300, delay = 0) {
-  if (!el) return;
-  el.animate([
-    { opacity: 0 },
-    { opacity: 1 }
-  ], {
-    duration,
-    delay,
-    fill: 'forwards',
-    easing: 'ease-out'
-  });
-}
-
-/**
  * Animates an element by sliding it up and fading it in.
  * Uses a smooth spring-feel easing curve.
  * @param {HTMLElement} el The element to animate

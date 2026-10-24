@@ -16,8 +16,6 @@ export const VALID_TASK_STATUSES = [
   'archived'
 ];
 
-export const VALID_TASK_TYPES = ['one_time', 'habit'];
-
 /**
  * State machine allowed transitions according to Section 13
  * INBOX -> READY -> SCHEDULED -> ACTIVE
@@ -302,28 +300,6 @@ export async function getActiveTasks() {
 }
 
 /**
- * Retrieves all active tasks for a specific bucket category.
- * @param {string} bucketId 
- * @returns {Promise<Array>}
- */
-export async function getTasksByBucket(bucketId) {
-  return await db.tasks.filter(task => {
-    const isCategory = (task.categoryId === bucketId || task.bucket === bucketId);
-    const isAct = task.status ? (task.status !== 'archived' && task.status !== 'completed') : (task.isActive && !task.isArchived);
-    return isCategory && isAct;
-  }).toArray();
-}
-
-/**
- * Retrieves tasks with a specific status.
- * @param {string} status 
- * @returns {Promise<Array>}
- */
-export async function getTasksByStatus(status) {
-  return await db.tasks.filter(task => task.status === status).toArray();
-}
-
-/**
  * Records completion of a task, updates its completion history and streaks.
  * @param {string} taskId 
  * @param {number} actualMinutes 
@@ -337,7 +313,7 @@ export async function recordCompletion(taskId, actualMinutes) {
   const completionEntry = {
     completedAt: new Date().toISOString(),
     date: completionDate,
-    actualMinutes: actualMinutes || task.estimatedMinutes
+    actualMinutes: actualMinutes ?? task.estimatedMinutes
   };
 
   const historyList = Array.isArray(task.completionHistory) ? task.completionHistory : [];
@@ -420,23 +396,3 @@ function calculateNewStreak(completionHistory, recurrence) {
   return { currentStreak: streak };
 }
 
-/**
- * Gets tasks that are overdue.
- * @param {string} [dateStr] Optional date, defaults to today
- * @returns {Promise<Array>} Overdue tasks
- */
-export async function getOverdueTasks(dateStr = today()) {
-  const activeTasks = await getActiveTasks();
-  
-  return activeTasks.filter(task => {
-    const historyList = Array.isArray(task.completionHistory) ? task.completionHistory : [];
-    const completedToday = historyList.some(entry => entry && entry.date === dateStr);
-    if (completedToday) return false;
-
-    if (task.deadline && task.deadline < dateStr) {
-      return true;
-    }
-
-    return false;
-  });
-}

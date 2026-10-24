@@ -1,8 +1,11 @@
 /* js/views/addTask.js */
 import { createTask, updateTask, deleteTask, getTask } from '../models/task.js';
+import { getPlanForDate, createPlan, addTaskToPlan } from '../models/plan.js';
 import { getPreferences } from '../models/preferences.js';
 import { showToast } from '../components/toast.js';
 import { extractTaskFromText } from '../engine/aiService.js';
+import { isTaskDueOn } from '../engine/recurrence.js';
+import { today, formatTime } from '../utils/date.js';
 
 let selectedEnergy = 'medium';
 
@@ -274,6 +277,37 @@ export function initAddTaskView() {
       taskData.recurrence = recurrence;
     }
 
+    const scheduleDateInput = document.getElementById('task-schedule-date');
+    const scheduleTimeInput = document.getElementById('task-schedule-time');
+    const scheduleDate = scheduleDateInput?.value || '';
+    let existingPlan = null;
+    let scheduledTime = scheduleTimeInput?.value || '';
+    let preferences = null;
+    if (scheduleDate && !document.getElementById('task-schedule-group')?.classList.contains('hidden')) {
+      if (scheduleDate < today()) {
+        showToast('Choose today or a future day', 'warning');
+        return;
+      }
+      const dueCheckTask = {
+        ...taskData,
+        type: taskData.isHabit ? 'habit' : 'one_time',
+        isActive: true,
+        isArchived: false,
+        createdAt: new Date().toISOString(),
+        completionHistory: []
+      };
+      if (dueCheckTask.recurrence && !isTaskDueOn(dueCheckTask, scheduleDate)) {
+        showToast('This recurring task is not due on that day', 'warning');
+        return;
+      }
+      preferences = await getPreferences();
+      existingPlan = await getPlanForDate(scheduleDate);
+      const plannedMinutes = (existingPlan?.plannedTasks || []).reduce((sum, item) => sum + (item.estimatedMinutes || 0), 0);
+      const capacity = existingPlan?.capacity || preferences.defaultCapacity || 300;
+      if (existingPlan && plannedMinutes + taskData.estimatedMinutes > capacity && !confirm(`This adds ${taskData.estimatedMinutes} minutes to ${plannedMinutes} of ${capacity} planned. Add it anyway?`)) return;
+      if (!scheduledTime) scheduledTime = suggestedPlanTime(scheduleDate, existingPlan, preferences);
+    }
+
     const editId = document.getElementById('edit-task-id').value;
 
     if (editId) {
@@ -286,8 +320,33 @@ export function initAddTaskView() {
       showToast('Task updated successfully 🎉', 'success');
     } else {
       // Create Mode
-      await createTask(taskData);
-      showToast('Task added to bucket ✨', 'success');
+      const taskId = await createTask(taskData);
+      if (scheduleDate && existingPlan && preferences) {
+        await addTaskToPlan(existingPlan.id, {
+          taskId,
+          title: taskTitle,
+          name: taskTitle,
+          bucket: taskCat,
+          estimatedMinutes: taskData.estimatedMinutes,
+          scheduledTime,
+          isUnplanned: false
+        });
+      } else if (scheduleDate && preferences) {
+        await createPlan(scheduleDate, preferences.defaultCapacity || 300, [{
+          taskId,
+          title: taskTitle,
+          name: taskTitle,
+          bucket: taskCat,
+          estimatedMinutes: taskData.estimatedMinutes,
+          scheduledTime,
+          isUnplanned: false
+        }]);
+      }
+      showToast(scheduleDate ? `Task added to ${scheduleDate}` : 'Task added to bucket ✨', 'success');
+      if (scheduleDate) {
+        window.location.hash = scheduleDate === today() ? '#today' : `#plan?date=${scheduleDate}`;
+        return;
+      }
     }
 
     window.location.hash = '#bucket';
@@ -302,6 +361,8 @@ export async function renderAddTaskView() {
   const deleteBtn = document.getElementById('task-delete-btn');
   const editIdInput = document.getElementById('edit-task-id');
   const bucketSelect = document.getElementById('task-bucket');
+  const scheduleGroup = document.getElementById('task-schedule-group');
+  const scheduleDateInput = document.getElementById('task-schedule-date');
 
   if (!titleEl || !bucketSelect) return;
 
@@ -326,6 +387,7 @@ export async function renderAddTaskView() {
 
   // Reset form to clean state
   document.getElementById('task-form').reset();
+  if (scheduleDateInput) scheduleDateInput.min = today();
   document.querySelectorAll('.duration-presets .duration-chip').forEach(c => c.classList.remove('selected'));
   document.querySelector('.duration-presets .duration-chip[data-min="30"]').classList.add('selected');
   document.getElementById('task-priority-display').textContent = '3';
@@ -353,6 +415,7 @@ export async function renderAddTaskView() {
 
   if (taskId) {
     // EDIT MODE
+    scheduleGroup?.classList.add('hidden');
     titleEl.textContent = 'Edit Task';
     if (deleteBtn) deleteBtn.classList.remove('hidden');
     editIdInput.value = taskId;
@@ -428,8 +491,28 @@ export async function renderAddTaskView() {
     }
   } else {
     // CREATE MODE
+    scheduleGroup?.classList.remove('hidden');
     titleEl.textContent = 'Create Task';
     if (deleteBtn) deleteBtn.classList.add('hidden');
     editIdInput.value = '';
   }
+}
+
+function suggestedPlanTime(dateStr, plan, preferences) {
+  let minutes = 7 * 60;
+  if (plan?.plannedTasks?.length) {
+    minutes = Math.max(...plan.plannedTasks.map(item => {
+      const [hours, mins] = (item.scheduledTime || '07:00').split(':').map(Number);
+      return hours * 60 + mins + (item.estimatedMinutes || 30) + (preferences.bufferMinutes || 0);
+    }));
+  } else if (preferences.wakeTime) {
+    const [hours, mins] = preferences.wakeTime.split(':').map(Number);
+    minutes = hours * 60 + mins;
+  }
+  if (dateStr === today()) {
+    const now = new Date();
+    minutes = Math.max(minutes, Math.ceil((now.getHours() * 60 + now.getMinutes()) / 15) * 15);
+  }
+  minutes = Math.min(23 * 60 + 45, Math.max(0, minutes));
+  return formatTime(Math.floor(minutes / 60), minutes % 60);
 }

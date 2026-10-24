@@ -195,8 +195,45 @@ export function renderTaskCard(task, mode, callbacks = {}) {
   // Tap action -> edit task (bucket mode) or start task (today mode)
   card.addEventListener('click', (e) => {
     if (e.target.closest('.suggestion-checkbox-container')) return;
+    if (e.target.closest('.task-card-actions')) return;
     if (callbacks.onTap) callbacks.onTap(task.id);
   });
+
+  if (mode === 'bucket' && (callbacks.onSchedule || callbacks.onHide || callbacks.onRestore)) {
+    const actions = document.createElement('div');
+    actions.className = 'task-card-actions';
+    actions.style.cssText = 'display:flex; flex-direction:column; gap:6px; flex:0 0 auto;';
+
+    if (callbacks.onSchedule && task.status !== 'archived') {
+      const scheduleButton = document.createElement('button');
+      scheduleButton.type = 'button';
+      scheduleButton.className = 'btn btn-ghost task-card-action-btn';
+      scheduleButton.textContent = 'Schedule';
+      scheduleButton.setAttribute('aria-label', `Schedule ${taskTitle} for a day`);
+      scheduleButton.addEventListener('click', (e) => {
+        e.stopPropagation();
+        callbacks.onSchedule(task.id);
+      });
+      actions.appendChild(scheduleButton);
+    }
+
+    const isArchived = task.status === 'archived' || task.isArchived;
+    const lifecycleCallback = isArchived ? callbacks.onRestore : callbacks.onHide;
+    if (lifecycleCallback) {
+      const lifecycleButton = document.createElement('button');
+      lifecycleButton.type = 'button';
+      lifecycleButton.className = 'btn btn-ghost task-card-action-btn';
+      lifecycleButton.textContent = isArchived ? 'Restore' : 'Hide';
+      lifecycleButton.setAttribute('aria-label', `${isArchived ? 'Restore' : 'Hide'} ${taskTitle}`);
+      lifecycleButton.addEventListener('click', (e) => {
+        e.stopPropagation();
+        lifecycleCallback(task.id);
+      });
+      actions.appendChild(lifecycleButton);
+    }
+
+    if (actions.childElementCount) card.appendChild(actions);
+  }
 
   // Swipe Gestures handling (pointer events)
   if (mode === 'today') {

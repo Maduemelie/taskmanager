@@ -40,6 +40,9 @@ export function isTaskDueOn(task, dateStr) {
 
   // 3. Non-recurring tasks
   if (!task.recurrence) {
+    // Habit tracking can be enabled independently from a repeat rule in the
+    // task form. Treat that combination as a daily habit instead of a one-off.
+    if (task.type === 'habit' || task.isHabit) return true;
     // If it has never been completed, it's available to schedule
     return !task.lastCompletedAt;
   }

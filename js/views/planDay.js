@@ -1,38 +1,41 @@
 /* js/views/planDay.js */
 import db from '../db.js';
-import { generateDayPlan } from '../engine/planner.js';
 import { 
-  generateDeterministicSchedule, 
-  validateSchedule, 
-  formatMinutesToTime, 
+  generateDeterministicSchedule,
   parseTimeToMinutes 
 } from '../engine/deterministicScheduler.js';
-import { calculateCandidateScore, rankCandidateTasks } from '../engine/scoring.js';
-import { getTodayPlan, createPlan, updatePlan } from '../models/plan.js';
+import { getPlanForDate, createPlan, removeTaskFromPlan } from '../models/plan.js';
 import { getActiveTasks } from '../models/task.js';
 import { getPreferences } from '../models/preferences.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { today, formatTime, formatTime12 } from '../utils/date.js';
 import { stagger, slideUp } from '../utils/animate.js';
+import { isTaskDueOn } from '../engine/recurrence.js';
 
 let activeEnergy = 'medium';
 let activePlanningStyle = 'balanced';
 let generatedSuggestions = []; // Array of { task, isChecked, block, scheduledTime }
 let initialCapacity = 180; // Default capacity in minutes (3 hours)
-let lastScheduleResult = null;
+let targetDate = today();
+
+function readTargetDateFromRoute() {
+  const query = window.location.hash.split('?')[1] || '';
+  const date = new URLSearchParams(query).get('date');
+  return date && /^\d{4}-\d{2}-\d{2}$/.test(date) && date >= today() ? date : today();
+}
 
 /**
  * Calculates real-time start time if planning for today after wake time.
  * Rounds up to the nearest 15-minute mark.
  */
-export function getEffectiveStartTime(wakeTime = '07:00') {
+export function getEffectiveStartTime(wakeTime = '07:00', dateStr = today()) {
   const [wakeH, wakeM] = wakeTime.split(':').map(Number);
   const wakeMin = wakeH * 60 + wakeM;
   const now = new Date();
   const currentMin = now.getHours() * 60 + now.getMinutes();
 
-  if (currentMin > wakeMin) {
+  if (dateStr === today() && currentMin > wakeMin) {
     const roundedMin = Math.ceil(currentMin / 15) * 15;
     const h = Math.floor(roundedMin / 60) % 24;
     const m = roundedMin % 60;
@@ -71,7 +74,7 @@ export function rescheduleSequentially(selectedTasks, startTime = '07:00', buffe
 export async function updateCapacitySummary() {
   try {
     const allTasks = await getActiveTasks();
-    const activeTasks = allTasks.filter(t => t.status !== 'inbox');
+    const activeTasks = allTasks.filter(t => t.status !== 'inbox' && isTaskDueOn(t, targetDate));
 
     const winStartInput = document.getElementById('plan-window-start');
     const winEndInput = document.getElementById('plan-window-end');
@@ -130,6 +133,17 @@ export function initPlanDayView() {
   const generateBtn = document.getElementById('plan-generate-btn');
   const addMoreBtn = document.getElementById('plan-add-more-btn');
   const confirmBtn = document.getElementById('plan-confirm-btn');
+  const targetDateInput = document.getElementById('plan-target-date');
+
+  if (targetDateInput && !targetDateInput.dataset.bound) {
+    targetDateInput.dataset.bound = 'true';
+    targetDateInput.min = today();
+    targetDateInput.addEventListener('change', () => {
+      if (targetDateInput.value >= today()) {
+        window.location.hash = `#plan?date=${targetDateInput.value}`;
+      }
+    });
+  }
 
   if (!generateBtn) return;
 
@@ -198,7 +212,7 @@ export function initPlanDayView() {
   // 7. Generate Plan Proposal Button (Section 5.5)
   generateBtn.addEventListener('click', async () => {
     const allTasks = await getActiveTasks();
-    const tasks = allTasks.filter(t => t.status !== 'inbox');
+    const tasks = allTasks.filter(t => t.status !== 'inbox' && isTaskDueOn(t, targetDate));
     const prefs = await getPreferences();
 
     const winStart = winStartInput ? winStartInput.value || '09:00' : '09:00';
@@ -211,6 +225,7 @@ export function initPlanDayView() {
 
     // Call deterministic scheduling engine (Section 8.4)
     const scheduleResult = generateDeterministicSchedule({
+      date: targetDate,
       tasks,
       availableWindows: [{ start: winStart, end: winEnd }],
       strategy: activePlanningStyle,
@@ -221,8 +236,6 @@ export function initPlanDayView() {
       energyMatchingEnabled: energyMatching,
       capacityMinutes: initialCapacity
     });
-
-    lastScheduleResult = scheduleResult;
 
     // Map task blocks into editable proposal list
     const taskBlocks = scheduleResult.blocks.filter(b => b.type === 'task');
@@ -289,11 +302,11 @@ export function initPlanDayView() {
         isUnplanned: false
       }));
 
-      await createPlan(today(), initialCapacity, plannedTasksInput);
-      showToast('Daily plan approved! Let\'s focus ✨', 'success');
+      await createPlan(targetDate, initialCapacity, plannedTasksInput);
+      showToast(`Plan for ${targetDate} saved`, 'success');
       
       // Navigate to Today view
-      window.location.hash = '#today';
+      window.location.hash = targetDate === today() ? '#today' : `#plan?date=${targetDate}`;
     });
   }
 }
@@ -302,9 +315,15 @@ export function initPlanDayView() {
  * Renders the state of the Day Planning flow depending on if today's plan is already generated.
  */
 export async function renderPlanDayView() {
+  targetDate = readTargetDateFromRoute();
+  const dateInput = document.getElementById('plan-target-date');
+  if (dateInput) {
+    dateInput.min = today();
+    dateInput.value = targetDate;
+  }
   await updateCapacitySummary();
 
-  const plan = await getTodayPlan();
+  const plan = await getPlanForDate(targetDate);
   
   const preSetupSec = document.getElementById('plan-pre-setup');
   const setupSec = document.getElementById('plan-setup');
@@ -329,29 +348,54 @@ export async function renderPlanDayView() {
   }
 
   if (plan) {
-    // Plan already exists for today! Render plan-exists state
+    const dateLabel = new Date(`${targetDate}T12:00:00`).toLocaleDateString(undefined, {
+      weekday: 'long', month: 'long', day: 'numeric'
+    });
     preSetupSec.innerHTML = `
       <div class="plan-hero-icon">📋</div>
-      <h2>Plan Already Created</h2>
+      <h2>Plan for ${dateLabel}</h2>
       <p style="color: var(--text-muted); max-width: 300px; margin-bottom: var(--spacing-lg);">
-        You have ${plan.plannedTasks?.length || 0} tasks scheduled for today.
+        ${plan.plannedTasks?.length || 0} tasks are on this day.
       </p>
       <div style="display: flex; flex-direction: column; gap: var(--spacing-sm); width: 100%; max-width: 280px;">
-        <button id="exists-view-schedule-btn" class="btn btn-primary">
-          View Today's Schedule
-        </button>
-        <button id="exists-replan-btn" class="btn btn-ghost" style="color: var(--primary-color);">
-          Replan My Day
-        </button>
+        ${targetDate === today() ? '<button id="exists-view-schedule-btn" class="btn btn-primary">View Today</button>' : '<button id="exists-add-tasks-btn" class="btn btn-primary">Add or hide tasks</button>'}
+        <button id="exists-replan-btn" class="btn btn-ghost">Replace this day\'s plan</button>
       </div>
+      <div id="existing-plan-task-list" class="existing-plan-task-list"></div>
     `;
 
-    document.getElementById('exists-view-schedule-btn').addEventListener('click', () => {
+    const existingList = document.getElementById('existing-plan-task-list');
+    (plan.plannedTasks || []).slice().sort((a, b) => a.scheduledTime.localeCompare(b.scheduledTime)).forEach(task => {
+      const row = document.createElement('div');
+      row.className = 'existing-plan-task-row';
+      const time = document.createElement('span');
+      time.textContent = task.scheduledTime;
+      const title = document.createElement('span');
+      title.textContent = task.title || task.name || 'Task';
+      row.append(time, title);
+      if (targetDate !== today() && task.status === 'pending') {
+        const removeButton = document.createElement('button');
+        removeButton.type = 'button';
+        removeButton.className = 'btn btn-ghost existing-plan-remove-btn';
+        removeButton.textContent = 'Remove';
+        removeButton.addEventListener('click', async () => {
+          await removeTaskFromPlan(plan.id, task.taskId);
+          renderPlanDayView();
+        });
+        row.appendChild(removeButton);
+      }
+      existingList.appendChild(row);
+    });
+
+    document.getElementById('exists-view-schedule-btn')?.addEventListener('click', () => {
       window.location.hash = '#today';
+    });
+    document.getElementById('exists-add-tasks-btn')?.addEventListener('click', () => {
+      window.location.hash = '#bucket';
     });
 
     document.getElementById('exists-replan-btn').addEventListener('click', async () => {
-      if (confirm('Re-planning will clear today\'s existing timeline. Do you want to continue?')) {
+      if (confirm(`Replacing the plan for ${targetDate} will clear its current schedule. Do you want to continue?`)) {
         await db.dailyPlans.delete(plan.id);
         renderPlanDayView(); // Reload setup screen
       }
@@ -362,7 +406,7 @@ export async function renderPlanDayView() {
       <div class="plan-hero-icon">✨</div>
       <h2>Ready to focus?</h2>
       <p style="color: var(--text-muted); max-width: 280px; margin-bottom: var(--spacing-lg);">
-        Let's design a customized schedule for today.
+        Let's design a schedule that fits this day.
       </p>
       <button id="plan-start-setup-btn" class="btn btn-primary plan-btn-start">
         Start Planning
@@ -540,7 +584,7 @@ async function showAddMoreModal() {
   content.style.gap = 'var(--spacing-md)';
 
   const allActiveTasks = await getActiveTasks();
-  const activeTasks = allActiveTasks.filter(t => t.status !== 'inbox');
+  const activeTasks = allActiveTasks.filter(t => t.status !== 'inbox' && isTaskDueOn(t, targetDate));
   const prefs = await getPreferences();
   const bufferMinutes = typeof prefs.bufferMinutes === 'number' ? prefs.bufferMinutes : 10;
   
@@ -574,7 +618,7 @@ async function showAddMoreModal() {
 
     item.addEventListener('click', () => {
       const lastSuggestion = generatedSuggestions[generatedSuggestions.length - 1];
-      let scheduledTime = getEffectiveStartTime(prefs.wakeTime || '07:00');
+      let scheduledTime = getEffectiveStartTime(prefs.wakeTime || '07:00', targetDate);
       
       if (lastSuggestion) {
         const [h, m] = lastSuggestion.scheduledTime.split(':').map(Number);

@@ -1,4 +1,6 @@
-import { getActiveTasks, transitionTaskStatus, updateTask, createTask, deleteTask } from '../models/task.js';
+import { getActiveTasks, getAllTasks, getTask, transitionTaskStatus, updateTask, createTask, deleteTask } from '../models/task.js';
+import { getPlanForDate, createPlan, addTaskToPlan, updatePlan } from '../models/plan.js';
+import db from '../db.js';
 import { getPreferences } from '../models/preferences.js';
 import { renderTaskCard } from '../components/taskCard.js';
 import { showToast } from '../components/toast.js';
@@ -6,10 +8,124 @@ import { openModal, closeModal } from '../components/modal.js';
 import { stagger, slideUp } from '../utils/animate.js';
 import { parseNaturalLanguageTask, quickCaptureTask } from '../engine/quickCapture.js';
 import { suggestTaskClarifications } from '../engine/aiService.js';
+import { isTaskDueOn } from '../engine/recurrence.js';
+import { today, formatTime } from '../utils/date.js';
 
 let currentFilter = 'all';
 let searchQuery = '';
 let cachedBuckets = [];
+
+async function hideTask(taskId) {
+  await deleteTask(taskId);
+  const plans = await db.dailyPlans.toArray();
+  await Promise.all(plans.filter(plan => plan.date >= today()).map(async plan => {
+    const plannedTasks = plan.plannedTasks.filter(item =>
+      item.taskId !== taskId || item.status === 'in-progress' || item.status === 'completed'
+    );
+    if (plannedTasks.length !== plan.plannedTasks.length) {
+      await updatePlan(plan.id, { plannedTasks });
+    }
+  }));
+  showToast('Task hidden from your active list', 'success');
+  await renderBucketView();
+}
+
+async function restoreTask(taskId) {
+  await transitionTaskStatus(taskId, 'ready');
+  showToast('Task restored', 'success');
+  await renderBucketView();
+}
+
+function suggestedTimeForDate(dateStr, plan, prefs) {
+  let minutes = 7 * 60;
+  if (plan?.plannedTasks?.length) {
+    minutes = Math.max(...plan.plannedTasks.map(item => {
+      const [hours, mins] = (item.scheduledTime || '07:00').split(':').map(Number);
+      return hours * 60 + mins + (item.estimatedMinutes || 30) + (prefs.bufferMinutes || 0);
+    }));
+  } else if (prefs.wakeTime) {
+    const [hours, mins] = prefs.wakeTime.split(':').map(Number);
+    minutes = hours * 60 + mins;
+  }
+
+  if (dateStr === today()) {
+    const now = new Date();
+    const current = now.getHours() * 60 + now.getMinutes();
+    minutes = Math.max(minutes, Math.ceil(current / 15) * 15);
+  }
+  minutes = Math.min(23 * 60 + 45, Math.max(0, minutes));
+  return formatTime(Math.floor(minutes / 60), minutes % 60);
+}
+
+async function scheduleTask(taskId) {
+  const task = await getTask(taskId);
+  if (!task) return;
+  const prefs = await getPreferences();
+  const content = document.createElement('form');
+  content.className = 'schedule-task-form';
+  content.innerHTML = `
+    <p class="schedule-task-copy">Choose the day and start time. This task will stay in its bucket and also appear on that day.</p>
+    <label class="form-label" for="schedule-task-date">Day</label>
+    <input class="input" id="schedule-task-date" type="date" min="${today()}" value="${today()}" required>
+    <label class="form-label" for="schedule-task-time">Start time</label>
+    <input class="input" id="schedule-task-time" type="time" required>
+    <p class="schedule-task-copy" id="schedule-day-summary" aria-live="polite"></p>
+    <button class="btn btn-primary" type="submit" style="width:100%; margin-top:var(--spacing-md);">Add to day</button>
+  `;
+  const dateInput = content.querySelector('#schedule-task-date');
+  const timeInput = content.querySelector('#schedule-task-time');
+  const daySummary = content.querySelector('#schedule-day-summary');
+  let selectedPlan = null;
+  const refreshSuggestedTime = async () => {
+    selectedPlan = await getPlanForDate(dateInput.value);
+    timeInput.value = suggestedTimeForDate(dateInput.value, selectedPlan, prefs);
+    const plannedMinutes = (selectedPlan?.plannedTasks || []).reduce((sum, item) => sum + (item.estimatedMinutes || 0), 0);
+    const capacity = selectedPlan?.capacity || prefs.defaultCapacity || 300;
+    daySummary.textContent = selectedPlan
+      ? `${selectedPlan.plannedTasks.length} tasks · ${plannedMinutes} of ${capacity} focus minutes planned`
+      : `New day plan · ${task.estimatedMinutes || 30} focus minutes`;
+  };
+  await refreshSuggestedTime();
+  dateInput.addEventListener('change', refreshSuggestedTime);
+  openModal(`Schedule “${task.title || task.name}”`, content);
+
+  content.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const dateStr = dateInput.value;
+    if (dateStr < today()) return;
+    if (task.recurrence && !isTaskDueOn(task, dateStr)) {
+      showToast('This recurring task is not due on that day', 'warning');
+      return;
+    }
+
+    const entry = {
+      taskId: task.id,
+      title: task.title || task.name,
+      name: task.name || task.title,
+      bucket: task.bucket || task.categoryId,
+      estimatedMinutes: task.estimatedMinutes || 30,
+      scheduledTime: timeInput.value,
+      isUnplanned: false
+    };
+    if (selectedPlan) {
+      if (selectedPlan.plannedTasks.some(item => item.taskId === task.id)) {
+        showToast('This task is already on that day', 'info');
+        return;
+      }
+      const plannedMinutes = selectedPlan.plannedTasks.reduce((sum, item) => sum + (item.estimatedMinutes || 0), 0);
+      const capacity = selectedPlan.capacity || prefs.defaultCapacity || 300;
+      if (plannedMinutes + entry.estimatedMinutes > capacity && !confirm(`This adds ${entry.estimatedMinutes} minutes to ${plannedMinutes} of ${capacity} planned. Add it anyway?`)) return;
+      await addTaskToPlan(selectedPlan.id, entry);
+    } else {
+      await createPlan(dateStr, prefs.defaultCapacity || 300, [entry]);
+    }
+    if (task.status === 'inbox') await transitionTaskStatus(task.id, 'ready');
+    closeModal();
+    showToast(`Added to ${dateStr === today() ? 'today' : dateStr}`, 'success');
+    if (dateStr === today()) window.location.hash = '#today';
+    else window.location.hash = `#plan?date=${dateStr}`;
+  });
+}
 
 /**
  * Initializes listeners for search input, category filters, and quick capture composer.
@@ -113,7 +229,9 @@ export async function renderBucketView() {
 
   const prefs = await getPreferences();
   cachedBuckets = prefs.buckets || [];
-  const allActiveTasks = await getActiveTasks();
+  const allActiveTasks = currentFilter === 'hidden'
+    ? (await getAllTasks()).filter(task => task.status === 'archived' || task.isArchived)
+    : await getActiveTasks();
 
   const matchingTasks = allActiveTasks.filter(task => {
     if (!searchQuery) return true;
@@ -121,7 +239,7 @@ export async function renderBucketView() {
     return taskTitle.includes(searchQuery);
   });
 
-  const inboxTasks = matchingTasks.filter(t => t.status === 'inbox');
+  const inboxTasks = currentFilter === 'hidden' ? [] : matchingTasks.filter(t => t.status === 'inbox');
   const readyTasks = matchingTasks.filter(t => t.status !== 'inbox');
 
   if (totalCountBadge) {
@@ -130,8 +248,8 @@ export async function renderBucketView() {
     totalCountBadge.textContent = searchQuery ? `${totalCount} found` : `${totalCount} ${label}`;
   }
 
-  // 1. Render Filter Chips (All, AI Inbox, and categories)
-  renderFilterChips(cachedBuckets, chipContainer, inboxTasks.length);
+  // 1. Render a calm single filter control instead of a row of colored tabs.
+  renderFilterSelect(cachedBuckets, chipContainer, inboxTasks.length);
 
   // 2. Render AI Inbox section
   if (inboxContainer) {
@@ -157,6 +275,28 @@ export async function renderBucketView() {
           <p style="margin-top:8px;font-size:0.85rem;">All tasks are clarified and structured.</p>
         </div>`;
     }
+    return;
+  }
+
+  if (currentFilter === 'hidden') {
+    const section = document.createElement('div');
+    section.className = 'bucket-section';
+    const title = document.createElement('h2');
+    title.className = 'bucket-title';
+    title.textContent = 'Hidden tasks';
+    section.appendChild(title);
+    if (matchingTasks.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'bucket-empty-state';
+      empty.textContent = 'No hidden tasks.';
+      section.appendChild(empty);
+    } else {
+      matchingTasks.forEach(task => section.appendChild(renderTaskCard(task, 'bucket', {
+        onTap: taskId => { window.location.hash = `#add-task?id=${taskId}`; },
+        onRestore: restoreTask
+      })));
+    }
+    listContainer.appendChild(section);
     return;
   }
 
@@ -190,8 +330,6 @@ export async function renderBucketView() {
     const countBadge = document.createElement('span');
     countBadge.className = 'badge';
     countBadge.style.marginLeft = 'var(--spacing-sm)';
-    countBadge.style.backgroundColor = bucket.color + '22';
-    countBadge.style.color = bucket.color;
     countBadge.textContent = bucketTasks.length;
 
     titleContainer.appendChild(emojiSpan);
@@ -220,7 +358,9 @@ export async function renderBucketView() {
         const cardNode = renderTaskCard(task, 'bucket', {
           onTap: (taskId) => {
             window.location.hash = `#add-task?id=${taskId}`;
-          }
+          },
+          onSchedule: scheduleTask,
+          onHide: hideTask
         });
         content.appendChild(cardNode);
       });
@@ -261,8 +401,6 @@ export async function renderBucketView() {
     const countBadge = document.createElement('span');
     countBadge.className = 'badge';
     countBadge.style.marginLeft = 'var(--spacing-sm)';
-    countBadge.style.backgroundColor = 'var(--text-muted)22';
-    countBadge.style.color = 'var(--text-color)';
     countBadge.textContent = otherTasks.length;
 
     titleContainer.appendChild(emojiSpan);
@@ -283,7 +421,9 @@ export async function renderBucketView() {
       const cardNode = renderTaskCard(task, 'bucket', {
         onTap: (taskId) => {
           window.location.hash = `#add-task?id=${taskId}`;
-        }
+        },
+        onSchedule: scheduleTask,
+        onHide: hideTask
       });
       content.appendChild(cardNode);
     });
@@ -351,7 +491,9 @@ function renderAIInboxSection(inboxTasks, container) {
     const cardNode = renderTaskCard(task, 'bucket', {
       onTap: (taskId) => {
         window.location.hash = `#add-task?id=${taskId}`;
-      }
+      },
+      onSchedule: scheduleTask,
+      onHide: hideTask
     });
 
     // Add action button group to inbox task cards (AI Clarify + Quick Approve)
@@ -594,65 +736,38 @@ function openAIClarifyModal(task, cachedBuckets) {
 /**
  * Renders category and status filter chips.
  */
-function renderFilterChips(buckets, container, inboxCount = 0) {
+function renderFilterSelect(buckets, container, inboxCount = 0) {
   container.innerHTML = '';
+  const select = document.createElement('select');
+  select.className = 'select task-filter-select';
+  select.setAttribute('aria-label', 'Filter tasks');
+  const allOption = document.createElement('option');
+  allOption.value = 'all';
+  allOption.textContent = 'All active tasks';
+  select.appendChild(allOption);
 
-  // 1. "All" chip
-  const allChip = document.createElement('button');
-  allChip.className = `chip ${currentFilter === 'all' ? 'selected' : ''}`;
-  allChip.style.cursor = 'pointer';
-  allChip.style.whiteSpace = 'nowrap';
-  allChip.textContent = '🌐 All';
-  if (currentFilter === 'all') {
-    allChip.style.backgroundColor = 'var(--primary-light)';
-    allChip.style.borderColor = 'var(--primary-color)';
-    allChip.style.color = 'var(--primary-color)';
+  if (inboxCount > 0 || currentFilter === 'inbox') {
+    const option = document.createElement('option');
+    option.value = 'inbox';
+    option.textContent = `AI Inbox (${inboxCount})`;
+    select.appendChild(option);
   }
-  allChip.addEventListener('click', () => {
-    currentFilter = 'all';
+  const hiddenOption = document.createElement('option');
+  hiddenOption.value = 'hidden';
+  hiddenOption.textContent = 'Hidden tasks';
+  select.appendChild(hiddenOption);
+  buckets.forEach(bucket => {
+    const option = document.createElement('option');
+    option.value = bucket.id;
+    option.textContent = `${bucket.emoji} ${bucket.name}`;
+    select.appendChild(option);
+  });
+  select.value = currentFilter;
+  select.addEventListener('change', () => {
+    currentFilter = select.value;
     renderBucketView();
   });
-  container.appendChild(allChip);
-
-  // 2. "AI Inbox" chip
-  if (inboxCount > 0 || currentFilter === 'inbox') {
-    const inboxChip = document.createElement('button');
-    inboxChip.className = `chip ${currentFilter === 'inbox' ? 'selected' : ''}`;
-    inboxChip.style.cursor = 'pointer';
-    inboxChip.style.whiteSpace = 'nowrap';
-    inboxChip.textContent = `📥 AI Inbox (${inboxCount})`;
-    if (currentFilter === 'inbox') {
-      inboxChip.style.backgroundColor = '#FFF3CD';
-      inboxChip.style.borderColor = '#856404';
-      inboxChip.style.color = '#856404';
-    }
-    inboxChip.addEventListener('click', () => {
-      currentFilter = 'inbox';
-      renderBucketView();
-    });
-    container.appendChild(inboxChip);
-  }
-
-  // 3. Category bucket chips
-  buckets.forEach(b => {
-    const chip = document.createElement('button');
-    chip.className = `chip ${currentFilter === b.id ? 'selected' : ''}`;
-    chip.style.cursor = 'pointer';
-    chip.style.whiteSpace = 'nowrap';
-    chip.textContent = `${b.emoji} ${b.name}`;
-
-    if (currentFilter === b.id) {
-      chip.style.backgroundColor = b.color + '22';
-      chip.style.borderColor = b.color;
-      chip.style.color = b.color;
-    }
-
-    chip.addEventListener('click', () => {
-      currentFilter = b.id;
-      renderBucketView();
-    });
-    container.appendChild(chip);
-  });
+  container.appendChild(select);
 }
 
 function escapeHtml(str) {

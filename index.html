@@ -101,7 +101,11 @@
       <section id="plan-view" class="view">
         <header style="margin-bottom: var(--spacing-lg);">
           <h1>Plan My Day</h1>
-          <p style="font-size: 0.9rem; color: var(--text-muted);">Generate a focused schedule based on your available time and priorities.</p>
+          <p style="font-size: 0.9rem; color: var(--text-muted);">Choose a day, then build a schedule that fits your available time.</p>
+          <div class="plan-date-control">
+            <label class="form-label" for="plan-target-date">Planning for</label>
+            <input id="plan-target-date" class="input" type="date">
+          </div>
         </header>
 
         <!-- Capacity Summary (Section 5.1 & 5.2) -->
@@ -299,8 +303,8 @@
           <input type="text" id="bucket-search" class="input" placeholder="Search tasks..." style="padding: var(--spacing-md);" aria-label="Search tasks">
         </div>
         
-        <div id="bucket-filter-chips" style="display: flex; gap: var(--spacing-sm); overflow-x: auto; padding-bottom: 8px; margin-bottom: var(--spacing-lg); scrollbar-width: none;">
-          <!-- Filter chips dynamically populated -->
+        <div id="bucket-filter-chips" class="task-filter-control">
+          <!-- Task filter select populated dynamically -->
         </div>
 
         <!-- AI Inbox Section (Ambiguous or newly quick-captured tasks needing review) -->
@@ -368,6 +372,15 @@
             <select id="task-bucket" class="select" required>
               <!-- Populated dynamically from preferences -->
             </select>
+          </div>
+
+          <div id="task-schedule-group" class="form-group task-schedule-fields">
+            <label class="form-label" for="task-schedule-date">Add to a day (optional)</label>
+            <div class="task-schedule-inputs">
+              <input id="task-schedule-date" class="input" type="date" aria-label="Schedule task on a day">
+              <input id="task-schedule-time" class="input" type="time" aria-label="Start time (optional)">
+            </div>
+            <p class="task-schedule-hint">Leave the date blank to keep this task in your bucket.</p>
           </div>
 
           <!-- Priority -->
@@ -520,6 +533,22 @@
       </section>
 
       <!-- 5. Settings Screen -->
+      <section id="habits-view" class="view">
+        <header class="habits-header">
+          <div>
+            <p class="habits-eyebrow">SMALL ACTIONS, REPEATED</p>
+            <h1>Habits</h1>
+            <p id="habits-due-count" class="habits-count">0 due today</p>
+          </div>
+          <select id="habits-filter" class="select habits-filter" aria-label="Filter habits">
+            <option value="due">Due today</option>
+            <option value="all">All habits</option>
+          </select>
+        </header>
+        <div id="habits-list" class="habits-list"></div>
+        <a class="btn btn-ghost habits-add-link" href="#add-task">+ Create a habit</a>
+      </section>
+
       <section id="settings-view" class="view">
         <header style="margin-bottom: var(--spacing-lg);">
           <h1>Settings</h1>
@@ -593,7 +622,11 @@
       </a>
       <a href="#bucket" class="nav-item" id="nav-bucket">
         <span class="nav-icon">📋</span>
-        <span>Bucket</span>
+        <span>Tasks</span>
+      </a>
+      <a href="#habits" class="nav-item" id="nav-habits">
+        <span class="nav-icon">✓</span>
+        <span>Habits</span>
       </a>
       <a href="#settings" class="nav-item" id="nav-settings">
         <span class="nav-icon">⚙️</span>

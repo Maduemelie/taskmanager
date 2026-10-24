@@ -2,6 +2,7 @@
 import { today, formatDateLocal } from '../utils/date.js';
 import { openModal, closeModal } from './modal.js';
 import { triggerHaptic } from '../utils/haptics.js';
+import { isTaskDueOn } from '../engine/recurrence.js';
 
 /**
  * Renders a 30-day history calendar for a given habit task.
@@ -20,7 +21,7 @@ export function showHabitCalendarModal(task, planId, onComplete) {
   header.innerHTML = `<p style="color: var(--text-muted); margin-bottom: var(--spacing-sm); font-size: 0.95rem;">Consistency is key. Here is your recent activity for <strong>${task.name}</strong>.</p>`;
   
   if (task.currentStreak > 0) {
-    header.innerHTML += `<div style="display:inline-block; background:var(--secondary-light); color:var(--secondary-color); padding: 4px 10px; border-radius:var(--radius-sm); font-weight:bold; font-size: 0.9rem;">🔥 ${task.currentStreak} Day Streak!</div>`;
+    header.innerHTML += `<div style="display:inline-block; background:var(--secondary-light); color:var(--secondary-color); padding: 4px 10px; border-radius:var(--radius-sm); font-weight:bold; font-size: 0.9rem;">🔥 ${task.currentStreak} check-in streak</div>`;
   }
   content.appendChild(header);
 
@@ -33,6 +34,7 @@ export function showHabitCalendarModal(task, planId, onComplete) {
 
   // Determine the past 28-30 days to fit nicely in a grid
   const historySet = new Set((task.completionHistory || []).map(h => h.date));
+  const completedDates = [...historySet].sort();
   const todayStr = today();
   
   // Use task.createdAt if available, otherwise just use today
@@ -62,6 +64,13 @@ export function showHabitCalendarModal(task, planId, onComplete) {
     const d = new Date(startDate);
     d.setDate(d.getDate() + i);
     const dateStr = formatDateLocal(d);
+    const lastCompletionBeforeDate = completedDates.filter(completedDate => completedDate < dateStr).at(-1);
+    const taskAtDate = {
+      ...task,
+      lastCompletedAt: lastCompletionBeforeDate ? `${lastCompletionBeforeDate}T12:00:00.000Z` : null,
+      completionHistory: (task.completionHistory || []).filter(entry => entry.date <= dateStr)
+    };
+    const dueOnDate = isTaskDueOn(taskAtDate, dateStr);
 
     const daySquare = document.createElement('div');
     daySquare.style.aspectRatio = '1 / 1';
@@ -74,6 +83,7 @@ export function showHabitCalendarModal(task, planId, onComplete) {
     daySquare.style.transition = 'all var(--transition-fast)';
     
     daySquare.textContent = d.getDate();
+    daySquare.setAttribute('aria-label', `${dateStr}${historySet.has(dateStr) ? ', completed' : dueOnDate ? ', due' : ', rest day'}`);
 
     if (historySet.has(dateStr)) {
       // Completed (Green)
@@ -84,18 +94,18 @@ export function showHabitCalendarModal(task, planId, onComplete) {
       // Future
       daySquare.style.backgroundColor = 'transparent';
       daySquare.style.color = 'transparent';
-    } else if (dateStr >= createdDate && dateStr < todayStr) {
-      // Missed (Light Red/Orange)
+    } else if (dateStr < todayStr && dueOnDate) {
+      // Missed only when this habit was actually due on that day.
       daySquare.style.backgroundColor = '#FFEBEE';
       daySquare.style.color = '#D32F2F';
-    } else if (dateStr === todayStr && !historySet.has(dateStr)) {
+    } else if (dateStr === todayStr && dueOnDate) {
       // Today (Not done yet)
-      daySquare.style.backgroundColor = 'var(--bg-primary)';
+      daySquare.style.backgroundColor = 'var(--primary-light)';
       daySquare.style.border = '2px dashed var(--text-muted)';
       daySquare.style.color = 'var(--text-muted)';
     } else {
-      // Before task was created
-      daySquare.style.backgroundColor = 'var(--bg-secondary)';
+      // Non-scheduled rest day or day before task creation.
+      daySquare.style.backgroundColor = 'var(--surface-color)';
       daySquare.style.color = 'var(--text-light)';
     }
 
@@ -105,7 +115,13 @@ export function showHabitCalendarModal(task, planId, onComplete) {
   content.appendChild(gridContainer);
   
   // Quick Actions
-  if (!historySet.has(todayStr)) {
+  const todayTask = {
+    ...task,
+    lastCompletedAt: completedDates.filter(completedDate => completedDate < todayStr).at(-1)
+      ? `${completedDates.filter(completedDate => completedDate < todayStr).at(-1)}T12:00:00.000Z`
+      : null
+  };
+  if (!historySet.has(todayStr) && isTaskDueOn(todayTask, todayStr)) {
     const btn = document.createElement('button');
     btn.className = 'btn btn-primary';
     btn.style.width = '100%';
@@ -122,7 +138,7 @@ export function showHabitCalendarModal(task, planId, onComplete) {
       }
     };
     content.appendChild(btn);
-  } else {
+  } else if (historySet.has(todayStr)) {
     const msg = document.createElement('p');
     msg.style.textAlign = 'center';
     msg.style.marginTop = 'var(--spacing-xl)';
@@ -130,6 +146,13 @@ export function showHabitCalendarModal(task, planId, onComplete) {
     msg.style.fontWeight = '800';
     msg.style.fontSize = '1.1rem';
     msg.innerHTML = '✨ You nailed it today!';
+    content.appendChild(msg);
+  } else {
+    const msg = document.createElement('p');
+    msg.style.textAlign = 'center';
+    msg.style.marginTop = 'var(--spacing-xl)';
+    msg.style.color = 'var(--text-muted)';
+    msg.textContent = 'This habit is not scheduled for today.';
     content.appendChild(msg);
   }
 

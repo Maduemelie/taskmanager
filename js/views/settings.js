@@ -1,5 +1,5 @@
 /* js/views/settings.js */
-import { getPreferences, updatePreferences, addBucket, updateBucket, deleteBucket, reorderBuckets } from '../models/preferences.js';
+import { getPreferences, updatePreferences, addBucket, deleteBucket, reorderBuckets } from '../models/preferences.js';
 import { resetDemoData } from '../seed.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
