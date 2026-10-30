@@ -305,20 +305,28 @@ export function replanRemainingDay(options = {}) {
  * @returns {Object} The updated plan object
  */
 export function addUnplannedTask(plan, newTask, insertTime) {
+  if (!plan) {
+    plan = { plannedTasks: [] };
+  }
+  if (!Array.isArray(plan.plannedTasks)) {
+    plan.plannedTasks = [];
+  }
+  const title = newTask.title || newTask.name || 'Untitled Task';
   const entry = {
     taskId: newTask.taskId,
-    name: newTask.name,
-    bucket: newTask.bucket || 'unplanned',
+    title: title,
+    name: newTask.name || title,
+    bucket: newTask.bucket || newTask.categoryId || 'unplanned',
     estimatedMinutes: newTask.estimatedMinutes || 30,
-    scheduledTime: insertTime,
-    status: 'pending',
-    completedAt: null,
-    actualMinutes: null,
-    isUnplanned: true
+    scheduledTime: insertTime || newTask.scheduledTime || '09:00',
+    status: newTask.status || 'pending',
+    completedAt: newTask.completedAt || null,
+    actualMinutes: newTask.actualMinutes || null,
+    isUnplanned: newTask.isUnplanned !== undefined ? newTask.isUnplanned : true
   };
 
   plan.plannedTasks.push(entry);
-  plan.plannedTasks.sort((a, b) => a.scheduledTime.localeCompare(b.scheduledTime));
+  plan.plannedTasks.sort((a, b) => (a.scheduledTime || '').localeCompare(b.scheduledTime || ''));
   return plan;
 }
 

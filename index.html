@@ -34,9 +34,14 @@
             <h1 id="today-view-title">Today</h1>
             <p id="today-view-subtitle" style="font-size: 0.9rem; color: var(--text-muted);"></p>
           </div>
-          <button id="today-replan-btn" class="btn btn-ghost" style="padding: var(--spacing-sm);">
-            🔄 Replan
-          </button>
+          <div style="display: flex; gap: var(--spacing-xs); align-items: center;">
+            <button id="today-add-task-btn" class="btn btn-secondary" style="padding: var(--spacing-sm) var(--spacing-md); font-weight: 700; font-size: 0.85rem;">
+              ➕ Add Task
+            </button>
+            <button id="today-replan-btn" class="btn btn-ghost" style="padding: var(--spacing-sm);">
+              🔄 Replan
+            </button>
+          </div>
         </header>
 
         <section id="today-unplanned-hub" class="today-unplanned-hub hidden" aria-labelledby="today-hub-title">
@@ -91,9 +96,9 @@
           </div>
         </div>
 
-        <!-- "Something Came Up" FAB -->
-        <button id="interruption-fab" class="fab" aria-label="Something came up">
-          🌊
+        <!-- Add Task / Something Came Up FAB -->
+        <button id="interruption-fab" class="fab" aria-label="Add task for today" title="Add task for today">
+          +
         </button>
       </section>
 

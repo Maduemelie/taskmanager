@@ -279,9 +279,13 @@ export function initAddTaskView() {
 
     const scheduleDateInput = document.getElementById('task-schedule-date');
     const scheduleTimeInput = document.getElementById('task-schedule-time');
-    const scheduleDate = scheduleDateInput?.value || '';
-    let existingPlan = null;
+    let scheduleDate = scheduleDateInput?.value || '';
     let scheduledTime = scheduleTimeInput?.value || '';
+    if (!scheduleDate && scheduledTime && !document.getElementById('task-schedule-group')?.classList.contains('hidden')) {
+      scheduleDate = today();
+      if (scheduleDateInput) scheduleDateInput.value = scheduleDate;
+    }
+    let existingPlan = null;
     let preferences = null;
     if (scheduleDate && !document.getElementById('task-schedule-group')?.classList.contains('hidden')) {
       if (scheduleDate < today()) {
@@ -379,15 +383,26 @@ export async function renderAddTaskView() {
   // 2. Parse Task ID if editing
   const hash = window.location.hash;
   let taskId = null;
+  let dateParam = null;
+  let timeParam = null;
   if (hash.includes('?')) {
     const query = hash.split('?')[1];
     const params = new URLSearchParams(query);
     taskId = params.get('id');
+    dateParam = params.get('date');
+    timeParam = params.get('time');
   }
 
   // Reset form to clean state
   document.getElementById('task-form').reset();
-  if (scheduleDateInput) scheduleDateInput.min = today();
+  if (scheduleDateInput) {
+    scheduleDateInput.min = today();
+    if (dateParam) scheduleDateInput.value = dateParam;
+  }
+  const scheduleTimeInput = document.getElementById('task-schedule-time');
+  if (scheduleTimeInput && timeParam) {
+    scheduleTimeInput.value = timeParam;
+  }
   document.querySelectorAll('.duration-presets .duration-chip').forEach(c => c.classList.remove('selected'));
   document.querySelector('.duration-presets .duration-chip[data-min="30"]').classList.add('selected');
   document.getElementById('task-priority-display').textContent = '3';

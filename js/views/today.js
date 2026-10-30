@@ -1,5 +1,5 @@
 /* js/views/today.js */
-import { getTodayPlan, markTaskStatus, updatePlan } from '../models/plan.js';
+import { getTodayPlan, markTaskStatus, updatePlan, createPlan } from '../models/plan.js';
 import { saveDailyFeedback, getDailyFeedback } from '../models/feedback.js';
 import { getAllTasks, createTask, getTask } from '../models/task.js';
 import { getPreferences } from '../models/preferences.js';
@@ -143,6 +143,13 @@ export function initTodayView() {
   const interruptionFab = document.getElementById('interruption-fab');
   if (interruptionFab) {
     interruptionFab.addEventListener('click', () => {
+      showInterruptionModal();
+    });
+  }
+
+  const todayAddBtn = document.getElementById('today-add-task-btn');
+  if (todayAddBtn) {
+    todayAddBtn.addEventListener('click', () => {
       showInterruptionModal();
     });
   }
@@ -424,10 +431,18 @@ export async function renderTodayView() {
     await updateTodayCapacitySummary();
     // Render Empty State
     container.innerHTML = `
-      <div id="timeline-empty-state" class="today-empty-state">
-        <span aria-hidden="true">☀️</span><p>Your schedule will appear here after you plan your day.</p>
+      <div id="timeline-empty-state" class="today-empty-state" style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; padding:var(--spacing-xl) 0; text-align:center;">
+        <span aria-hidden="true" style="font-size:2rem;">🌱</span>
+        <p style="margin:0; color:var(--text-muted); font-size:0.95rem;">Your schedule will appear here after you plan your day.</p>
+        <button id="empty-state-add-task-btn" class="btn btn-secondary btn-sm" style="margin-top:8px; font-weight:700;">
+          ➕ Add a Task for Today
+        </button>
       </div>
     `;
+
+    document.getElementById('empty-state-add-task-btn')?.addEventListener('click', () => {
+      showInterruptionModal();
+    });
 
     if (progressText) progressText.textContent = '0%';
     if (ringFill) ringFill.style.strokeDashoffset = '113';
@@ -580,10 +595,7 @@ export async function renderTodayView() {
           // Wiring Quick Task hook
           bufferDiv.querySelector('.btn-quick-task').addEventListener('click', (e) => {
             e.stopPropagation();
-            // Opens the interruption FAB modal as a proxy for "add task"
-            const fab = document.getElementById('interruption-fab');
-            if (fab) fab.click();
-            showToast('Add a quick task for your break', 'info');
+            showInterruptionModal(formatTime(gapStartH, gapStartM));
           });
 
           // Wiring Pull Next hook
@@ -1219,70 +1231,113 @@ async function showEditTimeModal(slot, taskDetail) {
 }
 
 /**
- * Bottom sheet modal for quick-adding unplanned tasks ("Something Came Up").
+ * Bottom sheet modal for quickly adding a task to today's schedule.
+ * @param {string|null} presetTime Optional HH:MM start time to pre-fill
  */
-async function showInterruptionModal() {
+async function showInterruptionModal(presetTime = null) {
   const prefs = await getPreferences();
   const bucketOptions = (prefs.buckets || []).map(b => 
     `<option value="${b.id}">${b.emoji} ${b.name}</option>`
   ).join('');
 
+  const now = new Date();
+  const initialTime = presetTime || formatTime(now.getHours(), now.getMinutes());
+
   const content = document.createElement('div');
   content.innerHTML = `
-    <form id="interruption-form" novalidate style="display:flex; flex-direction:column; gap:var(--spacing-lg);">
+    <form id="interruption-form" novalidate style="display:flex; flex-direction:column; gap:var(--spacing-md);">
       <div class="form-group">
-        <label for="inter-name" class="form-label">What needs your attention?</label>
+        <label for="inter-name" class="form-label">Task Name</label>
         <input 
           type="text" 
           id="inter-name" 
           class="input input-lg" 
-          placeholder="e.g., Emergency server outage" 
+          placeholder="e.g., Review project proposal" 
           required 
           autocomplete="off"
           style="width: 100%; box-sizing: border-box;"
         >
       </div>
 
-      <div class="form-row-dual" style="display:flex; gap:var(--spacing-md);">
-        <div class="form-group" style="flex: 1;">
-          <label for="inter-bucket" class="form-label">Category</label>
-          <select id="inter-bucket" class="select select-lg" required style="width: 100%;">
-            ${bucketOptions}
-          </select>
+      <div class="form-group">
+        <label for="inter-bucket" class="form-label">Category / Bucket</label>
+        <select id="inter-bucket" class="select select-lg" required style="width: 100%;">
+          ${bucketOptions}
+        </select>
+      </div>
+
+      <div class="form-row-dual" style="display:flex; gap:var(--spacing-md); flex-wrap:wrap;">
+        <div class="form-group" style="flex: 1; min-width: 140px;">
+          <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:var(--spacing-xs);">
+            <label for="inter-time" class="form-label" style="margin-bottom:0;">Scheduled Time</label>
+            <button type="button" id="inter-time-now-btn" class="btn btn-ghost" style="padding:1px 6px; font-size:0.75rem; color:var(--primary-color); font-weight:700; border:1px solid var(--primary-color); border-radius:var(--radius-sm);" title="Set to current time">⚡ Now</button>
+          </div>
+          <input 
+            type="time" 
+            id="inter-time" 
+            class="input" 
+            value="${initialTime}" 
+            required 
+            style="width: 100%; font-size: 1rem; font-weight: 700; padding: 10px 12px; box-sizing: border-box;"
+          >
         </div>
 
-        <div class="form-group" style="flex: 1;">
+        <div class="form-group" style="flex: 1; min-width: 160px;">
           <label class="form-label">Duration</label>
           <div class="segmented-control" role="radiogroup" style="display:flex; gap:4px; margin-top:4px;">
             <button type="button" class="segment-btn" data-val="15" style="flex:1; padding:8px 0; border:1px solid var(--border-color); background:var(--surface-color); border-radius:var(--radius-sm); font-size:0.8rem; font-weight:700;">15m</button>
             <button type="button" class="segment-btn active" data-val="30" style="flex:1; padding:8px 0; border:1px solid var(--primary-color); background:var(--primary-light); color:var(--primary-color); border-radius:var(--radius-sm); font-size:0.8rem; font-weight:700;">30m</button>
             <button type="button" class="segment-btn" data-val="45" style="flex:1; padding:8px 0; border:1px solid var(--border-color); background:var(--surface-color); border-radius:var(--radius-sm); font-size:0.8rem; font-weight:700;">45m</button>
+            <button type="button" class="segment-btn" data-val="60" style="flex:1; padding:8px 0; border:1px solid var(--border-color); background:var(--surface-color); border-radius:var(--radius-sm); font-size:0.8rem; font-weight:700;">60m</button>
           </div>
           <input type="hidden" id="inter-duration" value="30">
         </div>
       </div>
 
-      <div class="form-toggle-row" style="margin-top:var(--spacing-xs); padding:12px; background:rgba(0,0,0,0.02); border-radius:var(--radius-md);">
+      <div style="display:flex; flex-direction:column; gap:8px; padding:12px; background:rgba(0,0,0,0.02); border-radius:var(--radius-md);">
         <label class="toggle-container" for="inter-auto-rebalance" style="display:flex; align-items:center; gap:12px; cursor:pointer;">
-          <input type="checkbox" id="inter-auto-rebalance" checked style="width:20px; height:20px; accent-color:var(--primary-color);">
+          <input type="checkbox" id="inter-auto-rebalance" checked style="width:18px; height:18px; accent-color:var(--primary-color);">
           <span class="toggle-label" style="display:flex; flex-direction:column;">
-            <strong style="font-size:0.9rem;">Auto-shift remaining tasks</strong>
-            <small style="font-size:0.75rem; color:var(--text-muted);">Pushes downstream tasks forward safely</small>
+            <strong style="font-size:0.85rem;">Auto-shift subsequent tasks</strong>
+            <small style="font-size:0.75rem; color:var(--text-muted);">Pushes downstream tasks forward safely if time conflicts</small>
+          </span>
+        </label>
+        <label class="toggle-container" for="inter-start-now" style="display:flex; align-items:center; gap:12px; cursor:pointer;">
+          <input type="checkbox" id="inter-start-now" style="width:18px; height:18px; accent-color:var(--primary-color);">
+          <span class="toggle-label" style="display:flex; flex-direction:column;">
+            <strong style="font-size:0.85rem;">Start working right now</strong>
+            <small style="font-size:0.75rem; color:var(--text-muted);">Mark as in-progress immediately</small>
           </span>
         </label>
       </div>
 
-      <button id="inter-submit-btn" class="btn btn-primary" type="submit" style="padding:14px; font-size:1rem; width:100%; margin-top:8px;">
-        Add & Update Schedule ⚡
-      </button>
+      <div style="display:flex; gap:var(--spacing-md); margin-top:4px;">
+        <button id="inter-cancel-btn" type="button" class="btn btn-secondary" style="flex:1; padding:12px; font-weight:700;">
+          Cancel
+        </button>
+        <button id="inter-submit-btn" class="btn btn-primary" type="submit" style="flex:2; padding:12px; font-size:1rem; font-weight:700;">
+          Save Task 💾
+        </button>
+      </div>
+
+      <div style="text-align:center;">
+        <button type="button" id="inter-more-options-btn" class="btn btn-ghost" style="font-size:0.8rem; color:var(--text-muted); text-decoration:underline; padding:4px;">
+          Need recurring, habit, or deadline settings? Open full form ↗
+        </button>
+      </div>
     </form>
   `;
 
-  openModal('Something Came Up ⚡', content);
+  openModal('Add Task for Today ➕', content);
 
   const form = content.querySelector('#interruption-form');
   const durationInput = form.querySelector('#inter-duration');
-  
+  const timeInput = form.querySelector('#inter-time');
+  const startNowCheck = form.querySelector('#inter-start-now');
+  const nowBtn = form.querySelector('#inter-time-now-btn');
+  const cancelBtn = form.querySelector('#inter-cancel-btn');
+  const moreBtn = form.querySelector('#inter-more-options-btn');
+
   // Segmented control logic
   const segmentBtns = form.querySelectorAll('.segment-btn');
   segmentBtns.forEach(btn => {
@@ -1302,71 +1357,102 @@ async function showInterruptionModal() {
     });
   });
 
+  // "⚡ Now" button
+  if (nowBtn && timeInput) {
+    nowBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const n = new Date();
+      timeInput.value = formatTime(n.getHours(), n.getMinutes());
+      if (startNowCheck) startNowCheck.checked = true;
+    });
+  }
+
+  // Cancel button
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      closeModal();
+    });
+  }
+
+  // More options button (opens full form prefilled with date and time)
+  if (moreBtn) {
+    moreBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const chosenTime = timeInput?.value || '';
+      closeModal();
+      window.location.hash = `#add-task?date=${today()}${chosenTime ? `&time=${chosenTime}` : ''}`;
+    });
+  }
+
   // Submit Logic
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
 
     const taskName = form.querySelector('#inter-name').value.trim();
     if (!taskName) {
-      showToast('Please specify what occurred', 'warning');
+      showToast('Please specify a task name', 'warning');
       return;
     }
 
     const bucketSelect = form.querySelector('#inter-bucket');
     const selectedBucket = bucketSelect ? bucketSelect.value : (prefs.buckets[0]?.id || 'home');
-    const duration = parseInt(durationInput.value, 10);
-    const autoRebalance = form.querySelector('#inter-auto-rebalance').checked;
+    const duration = parseInt(durationInput.value, 10) || 30;
+    const scheduledTime = timeInput?.value || formatTime(new Date().getHours(), new Date().getMinutes());
+    const autoRebalance = form.querySelector('#inter-auto-rebalance')?.checked;
+    const startNow = form.querySelector('#inter-start-now')?.checked;
 
-    const now = new Date();
-    const insertTime = formatTime(now.getHours(), now.getMinutes());
-    const tempTaskId = `task_temp_${Date.now()}`;
-
-    // 1. Instant Modal Dismissal
     closeModal();
 
-    // 2. Optimistic In-Memory State Update
-    const unplannedEntry = {
-      taskId: tempTaskId,
-      name: taskName + ' ⚡',
-      bucket: selectedBucket,
-      estimatedMinutes: duration,
-      scheduledTime: insertTime,
-      status: 'in-progress', // assumes you're starting it right now
-      completedAt: null,
-      actualMinutes: null,
-      isUnplanned: true
-    };
-
-    activePlan = addUnplannedTask(activePlan, unplannedEntry, insertTime);
-
-    if (autoRebalance) {
-      activePlan = rescheduleRemaining(activePlan, insertTime, duration, tempTaskId);
-    }
-
-    // 3. Instant UI Re-render (Sub-16ms)
-    await renderTodayView();
-    showToast('Interruption logged! Schedule updated ⚡', 'success');
-
-    // 4. Background IndexedDB Persistence
     try {
+      // 1. Create master task record in IndexedDB (tasks store)
       const realTaskId = await createTask({
         name: taskName,
+        title: taskName,
         bucket: selectedBucket,
-        priority: 3,
+        categoryId: selectedBucket,
+        priority: 60,
         estimatedMinutes: duration,
         energyLevel: 'medium',
-        preferredTime: 'anytime'
+        preferredTime: 'anytime',
+        status: 'ready'
       });
 
-      // Swap temporary ID with real IndexedDB ID
-      activePlan.plannedTasks = activePlan.plannedTasks.map(t => 
-        t.taskId === tempTaskId ? { ...t, taskId: realTaskId } : t
-      );
+      const taskStatus = startNow ? 'in-progress' : 'pending';
+      const plannedEntry = {
+        taskId: realTaskId,
+        name: taskName,
+        title: taskName,
+        bucket: selectedBucket,
+        estimatedMinutes: duration,
+        scheduledTime: scheduledTime,
+        status: taskStatus,
+        completedAt: null,
+        actualMinutes: null,
+        isUnplanned: false
+      };
 
-      await updatePlan(activePlan.id, { plannedTasks: activePlan.plannedTasks });
+      // 2. Fetch or initialize today's plan
+      let plan = await getTodayPlan();
+      if (!plan) {
+        const defaultCapacity = prefs.defaultCapacity || 300;
+        plan = await createPlan(today(), defaultCapacity, [plannedEntry]);
+        activePlan = plan;
+      } else {
+        plan = addUnplannedTask(plan, plannedEntry, scheduledTime);
+        if (autoRebalance) {
+          plan = rescheduleRemaining(plan, scheduledTime, duration, realTaskId);
+        }
+        await updatePlan(plan.id, { plannedTasks: plan.plannedTasks });
+        activePlan = plan;
+      }
+
+      // 3. Render updated timeline
+      await renderTodayView();
+      showToast(`Task saved and scheduled for ${formatTime12(scheduledTime)}! 🎉`, 'success');
     } catch (err) {
-      console.error('Background persistence failed:', err);
-      showToast('Failed to save to database', 'error');
+      console.error('Failed to save task to schedule:', err);
+      showToast('Failed to save task to schedule', 'error');
     }
   });
 
