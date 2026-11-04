@@ -32,16 +32,16 @@ export function renderTimeSlot(slotEntry, task, callbacks = {}) {
   const startTime12 = formatTime12(slotEntry.scheduledTime);
   const endTime12 = formatTime12(endTimeStr);
 
-  // Time display — upgraded to accessible 44x44px touch target
+  // Time display — accessible 44x44px touch target (tapping opens time/duration edit)
+  const taskDisplayName = (task && (task.title || task.name)) || slotEntry.title || slotEntry.name || 'task';
   const timeDisplay = document.createElement('button');
   timeDisplay.type = 'button';
   timeDisplay.className = 'timeline-time time-slot-time-trigger';
-  timeDisplay.title = 'Tap to adjust start time or duration';
-  timeDisplay.setAttribute('aria-label', `Edit time for ${task.name}. Scheduled from ${startTime12} to ${endTime12}`);
+  timeDisplay.title = 'Tap time to adjust start time or duration';
+  timeDisplay.setAttribute('aria-label', `Change time for ${taskDisplayName}. Scheduled from ${startTime12} to ${endTime12}`);
   timeDisplay.innerHTML = `
     <span class="time-start" style="font-weight: 800; display: block; font-size: 0.78rem; line-height: 1.15; color: var(--text-color);">${startTime12}</span>
     <span class="time-end" style="font-size: 0.65rem; color: var(--text-muted); font-weight: 600; display: block; margin-top: 2px;">to ${endTime12}</span>
-    <span class="time-edit-hint" style="font-size: 0.65rem; color: var(--primary-color); display: block; margin-top: 2px; font-weight: 700;">✏️ edit</span>
   `;
   timeDisplay.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -158,6 +158,48 @@ export function renderTimeSlot(slotEntry, task, callbacks = {}) {
   statusChip.style.cssText = `font-size:0.7rem; padding:1px 6px; background-color:${getStatusColor(slotEntry.status, isOverdue)}; color:#FFF;`;
   statusChip.textContent = `${statusEmoji} ${statusLabel}`;
   badgeContainer.appendChild(statusChip);
+
+  // Reorder buttons (Move Up / Down)
+  if (callbacks.onMoveUp || callbacks.onMoveDown) {
+    const reorderContainer = document.createElement('div');
+    reorderContainer.className = 'timeline-reorder-actions';
+
+    const upBtn = document.createElement('button');
+    upBtn.type = 'button';
+    upBtn.className = 'btn-reorder btn-move-up';
+    upBtn.title = 'Move earlier in schedule';
+    upBtn.setAttribute('aria-label', `Move ${taskDisplayName} earlier in schedule`);
+    upBtn.innerHTML = '▲';
+    if (!callbacks.canMoveUp) {
+      upBtn.disabled = true;
+      upBtn.classList.add('disabled');
+    } else {
+      upBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        callbacks.onMoveUp(slotEntry.taskId);
+      });
+    }
+
+    const downBtn = document.createElement('button');
+    downBtn.type = 'button';
+    downBtn.className = 'btn-reorder btn-move-down';
+    downBtn.title = 'Move later in schedule';
+    downBtn.setAttribute('aria-label', `Move ${taskDisplayName} later in schedule`);
+    downBtn.innerHTML = '▼';
+    if (!callbacks.canMoveDown) {
+      downBtn.disabled = true;
+      downBtn.classList.add('disabled');
+    } else {
+      downBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        callbacks.onMoveDown(slotEntry.taskId);
+      });
+    }
+
+    reorderContainer.appendChild(upBtn);
+    reorderContainer.appendChild(downBtn);
+    badgeContainer.appendChild(reorderContainer);
+  }
 
   cardHeaderFlex.appendChild(badgeContainer);
   headerContainer.prepend(cardHeaderFlex);

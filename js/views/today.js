@@ -10,7 +10,8 @@ import {
   addUnplannedTask, 
   rescheduleRemaining, 
   evaluateReplanTrigger,
-  replanRemainingDay
+  replanRemainingDay,
+  reorderPlannedTasks
 } from '../engine/reschedule.js';
 import { today, formatTime, formatTime12 } from '../utils/date.js';
 import { stagger, slideUp, popEffect } from '../utils/animate.js';
@@ -407,6 +408,31 @@ function showRebalanceDiffModal(replanResult) {
 }
 
 /**
+ * Moves a scheduled task up or down in the timeline, updating both sequence and allocated time slots.
+ * @param {string} taskId
+ * @param {'up'|'down'} direction
+ */
+async function moveScheduledTask(taskId, direction) {
+  if (!activePlan || !activePlan.plannedTasks) return;
+
+  const result = reorderPlannedTasks(activePlan, taskId, direction);
+  if (!result.success) {
+    if (result.reason) showToast(result.reason, 'info');
+    return;
+  }
+
+  // Save updated plan to database
+  await updatePlan(activePlan.id, { plannedTasks: result.plan.plannedTasks });
+  activePlan = result.plan;
+
+  triggerHaptic(12);
+  const targetSlot = activePlan.plannedTasks.find(t => t.taskId === taskId);
+  const taskName = targetSlot ? (targetSlot.title || targetSlot.name || 'Task') : 'Task';
+  showToast(`Moved "${taskName}" ${direction}! ⏱️ Time updated`, 'success');
+  renderTodayView();
+}
+
+/**
  * Renders the Today timeline view, tasks checklist, and progress summary.
  */
 export async function renderTodayView() {
@@ -469,7 +495,7 @@ export async function renderTodayView() {
     let lastPeriod = null;
     let lastSlotEndMin = null;
 
-    activeSlots.forEach(slot => {
+    activeSlots.forEach((slot, index) => {
       let taskDetail = taskMap.get(slot.taskId);
       if (!taskDetail) {
         // Fallback mock details for quick-added unplanned tasks
@@ -615,7 +641,21 @@ export async function renderTodayView() {
 
       lastSlotEndMin = endMin;
 
+      const isMovable = slot.status !== 'completed';
+      const prevSlot = index > 0 ? activeSlots[index - 1] : null;
+      const nextSlot = index < activeSlots.length - 1 ? activeSlots[index + 1] : null;
+      const canMoveUp = isMovable && prevSlot !== null && prevSlot.status !== 'completed';
+      const canMoveDown = isMovable && nextSlot !== null && nextSlot.status !== 'completed';
+
       const callbacks = {
+        canMoveUp,
+        canMoveDown,
+        onMoveUp: async (taskId) => {
+          await moveScheduledTask(taskId, 'up');
+        },
+        onMoveDown: async (taskId) => {
+          await moveScheduledTask(taskId, 'down');
+        },
         onStart: async (taskId) => {
           if (taskDetail.isHabit) {
             showHabitCalendarModal(taskDetail, activePlan.id, async () => {

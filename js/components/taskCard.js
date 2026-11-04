@@ -196,6 +196,7 @@ export function renderTaskCard(task, mode, callbacks = {}) {
   card.addEventListener('click', (e) => {
     if (e.target.closest('.suggestion-checkbox-container')) return;
     if (e.target.closest('.task-card-actions')) return;
+    if (e.target.closest('.timeline-reorder-actions') || e.target.closest('.btn-reorder')) return;
     if (callbacks.onTap) callbacks.onTap(task.id);
   });
 
@@ -242,6 +243,7 @@ export function renderTaskCard(task, mode, callbacks = {}) {
     let isDragging = false;
 
     card.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.timeline-reorder-actions') || e.target.closest('.btn-reorder') || e.target.closest('.timeline-time') || e.target.closest('button')) return;
       startX = e.clientX;
       card.setPointerCapture(e.pointerId);
       isDragging = true;

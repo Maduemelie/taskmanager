@@ -6,7 +6,8 @@ import {
   suggestDeferrals, 
   applyDeferrals,
   evaluateReplanTrigger,
-  replanRemainingDay
+  replanRemainingDay,
+  reorderPlannedTasks
 } from '../engine/reschedule.js';
 
 describe('Reschedule & Adaptive Replanning Engine (Spec Section 9)', () => {
@@ -235,6 +236,67 @@ describe('Reschedule & Adaptive Replanning Engine (Spec Section 9)', () => {
     const finishedPending = finishResult.updatedPlan.plannedTasks.find(t => t.taskId === 'pend-next');
     expect(finishedActive.status).toBe('completed');
     expect(finishedPending.scheduledTime).toBe('16:55');
+  });
+
+  it('should reorder tasks up and swap allocated time slots', () => {
+    const testPlan = {
+      id: 'test-reorder',
+      date: '2026-10-06',
+      plannedTasks: [
+        { taskId: 'task-a', scheduledTime: '09:00', estimatedMinutes: 60, status: 'pending' },
+        { taskId: 'task-b', scheduledTime: '10:00', estimatedMinutes: 30, status: 'pending' },
+        { taskId: 'task-c', scheduledTime: '10:30', estimatedMinutes: 45, status: 'pending' }
+      ]
+    };
+
+    const res = reorderPlannedTasks(testPlan, 'task-b', 'up');
+    expect(res.success).toBe(true);
+
+    const taskB = res.plan.plannedTasks.find(t => t.taskId === 'task-b');
+    const taskA = res.plan.plannedTasks.find(t => t.taskId === 'task-a');
+    const taskC = res.plan.plannedTasks.find(t => t.taskId === 'task-c');
+
+    expect(taskB.scheduledTime).toBe('09:00'); // Takes task-a's original start
+    expect(taskA.scheduledTime).toBe('09:30'); // Starts immediately after task-b (09:00 + 30m)
+    expect(taskC.scheduledTime).toBe('10:30'); // Unaffected because 09:30 + 60m = 10:30
+  });
+
+  it('should reorder tasks down and swap allocated time slots', () => {
+    const testPlan = {
+      id: 'test-reorder-down',
+      date: '2026-10-06',
+      plannedTasks: [
+        { taskId: 'task-b', scheduledTime: '09:00', estimatedMinutes: 30, status: 'pending' },
+        { taskId: 'task-a', scheduledTime: '09:30', estimatedMinutes: 60, status: 'pending' },
+        { taskId: 'task-c', scheduledTime: '10:30', estimatedMinutes: 45, status: 'pending' }
+      ]
+    };
+
+    const res = reorderPlannedTasks(testPlan, 'task-b', 'down');
+    expect(res.success).toBe(true);
+
+    const taskA = res.plan.plannedTasks.find(t => t.taskId === 'task-a');
+    const taskB = res.plan.plannedTasks.find(t => t.taskId === 'task-b');
+
+    expect(taskA.scheduledTime).toBe('09:00');
+    expect(taskB.scheduledTime).toBe('10:00');
+  });
+
+  it('should not allow moving completed tasks or moving pending tasks past completed tasks', () => {
+    const testPlan = {
+      id: 'test-completed-boundary',
+      date: '2026-10-06',
+      plannedTasks: [
+        { taskId: 'task-done', scheduledTime: '08:00', estimatedMinutes: 30, status: 'completed' },
+        { taskId: 'task-pending', scheduledTime: '09:00', estimatedMinutes: 30, status: 'pending' }
+      ]
+    };
+
+    const resDone = reorderPlannedTasks(testPlan, 'task-done', 'down');
+    expect(resDone.success).toBe(false);
+
+    const resPending = reorderPlannedTasks(testPlan, 'task-pending', 'up');
+    expect(resPending.success).toBe(false);
   });
 
 });

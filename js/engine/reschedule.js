@@ -5,7 +5,7 @@ import { today, formatTime } from '../utils/date.js';
 /**
  * Converts "HH:MM" to minutes from midnight.
  */
-function parseTimeToMinutes(tStr) {
+export function parseTimeToMinutes(tStr) {
   if (typeof tStr === 'number') return tStr;
   if (!tStr || typeof tStr !== 'string') return 0;
   if (tStr.includes('T')) {
@@ -20,7 +20,7 @@ function parseTimeToMinutes(tStr) {
 /**
  * Converts minutes from midnight into 24-hour time format "HH:MM".
  */
-function formatMinutesToTime(minutes) {
+export function formatMinutesToTime(minutes) {
   const normalized = Math.max(0, Math.round(minutes)) % 1440;
   const h = Math.floor(normalized / 60);
   const m = normalized % 60;
@@ -430,4 +430,114 @@ export function applyDeferrals(plan, taskIdsToDefer) {
     return t;
   });
   return plan;
+}
+
+/**
+ * Reorders an individual task up or down in the daily plan.
+ * Swapping positions also swaps the time slots allocated to the tasks,
+ * adjusting for individual task durations and preserving intentional buffers.
+ *
+ * @param {Object} plan - The DailyPlan object
+ * @param {string} taskId - The ID of the task to move
+ * @param {'up'|'down'} direction - Direction to move
+ * @returns {{ success: boolean, plan: Object, reason?: string, movedTaskId?: string, swappedWithTaskId?: string }}
+ */
+export function reorderPlannedTasks(plan, taskId, direction) {
+  if (!plan || !Array.isArray(plan.plannedTasks) || plan.plannedTasks.length < 2) {
+    return { success: false, plan, reason: 'Not enough tasks to reorder' };
+  }
+
+  // Clone tasks array
+  const tasks = plan.plannedTasks.map(t => ({ ...t }));
+
+  // Ensure tasks are sorted chronologically by scheduled time
+  tasks.sort((a, b) => (a.scheduledTime || '').localeCompare(b.scheduledTime || ''));
+
+  // Active slots in chronological schedule order (excluding rescheduled/deferred)
+  const activeSlots = tasks.filter(t => t.status !== 'rescheduled');
+  const currentIndex = activeSlots.findIndex(t => t.taskId === taskId);
+
+  if (currentIndex === -1) {
+    return { success: false, plan, reason: 'Task not found in active schedule' };
+  }
+
+  const targetSlot = activeSlots[currentIndex];
+  if (targetSlot.status === 'completed') {
+    return { success: false, plan, reason: 'Completed tasks cannot be moved' };
+  }
+
+  let swapIndex;
+  if (direction === 'up') {
+    swapIndex = currentIndex - 1;
+    if (swapIndex < 0) {
+      return { success: false, plan, reason: 'Task is already at the top' };
+    }
+    if (activeSlots[swapIndex].status === 'completed') {
+      return { success: false, plan, reason: 'Cannot move task before a completed task' };
+    }
+  } else if (direction === 'down') {
+    swapIndex = currentIndex + 1;
+    if (swapIndex >= activeSlots.length) {
+      return { success: false, plan, reason: 'Task is already at the bottom' };
+    }
+    if (activeSlots[swapIndex].status === 'completed') {
+      return { success: false, plan, reason: 'Cannot move task past a completed task' };
+    }
+  } else {
+    return { success: false, plan, reason: 'Invalid direction' };
+  }
+
+  const otherSlot = activeSlots[swapIndex];
+
+  // slotA is earlier in the schedule, slotB is later
+  const slotA = direction === 'up' ? otherSlot : targetSlot;
+  const slotB = direction === 'up' ? targetSlot : otherSlot;
+
+  const startMinA = parseTimeToMinutes(slotA.scheduledTime);
+  const durA = slotA.estimatedMinutes || 30;
+
+  const startMinB = parseTimeToMinutes(slotB.scheduledTime);
+  const durB = slotB.estimatedMinutes || 30;
+
+  // Existing buffer/gap between slotA and slotB (if any)
+  const existingGap = Math.max(0, startMinB - (startMinA + durA));
+
+  // Swap times:
+  // slotB moves to slotA's earlier start time
+  const newStartMinB = startMinA;
+  const newEndMinB = newStartMinB + durB;
+
+  // slotA follows slotB, preserving any existing buffer
+  const newStartMinA = newEndMinB + existingGap;
+  const newEndMinA = newStartMinA + durA;
+
+  slotB.scheduledTime = formatMinutesToTime(newStartMinB);
+  slotA.scheduledTime = formatMinutesToTime(newStartMinA);
+
+  // If newEndMinA pushes into subsequent tasks, cascade them forward
+  let cursor = newEndMinA;
+  tasks.forEach(t => {
+    if (t.taskId === slotA.taskId || t.taskId === slotB.taskId || t.status === 'completed' || t.status === 'rescheduled') {
+      return;
+    }
+    const tStart = parseTimeToMinutes(t.scheduledTime);
+    if (tStart < cursor && tStart >= startMinA) {
+      const tDur = t.estimatedMinutes || 30;
+      t.scheduledTime = formatMinutesToTime(cursor);
+      cursor += tDur;
+    }
+  });
+
+  tasks.sort((a, b) => (a.scheduledTime || '').localeCompare(b.scheduledTime || ''));
+
+  return {
+    success: true,
+    plan: {
+      ...plan,
+      plannedTasks: tasks
+    },
+    movedTaskId: taskId,
+    swappedWithTaskId: otherSlot.taskId,
+    newScheduledTime: targetSlot.scheduledTime
+  };
 }
